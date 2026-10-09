@@ -40,7 +40,13 @@ After the first deploy:
 | `src/proxy.ts` | Refreshes the Supabase session, guards `/admin` and `/app` |
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |
-| `src/inngest/` | Durable reminder flows |
+| `src/lib/booking/` | Free-slot engine and booking, cancel, reschedule |
+| `src/lib/agent/` | The WhatsApp booking agent (Claude + tools) |
+| `src/inngest/` | Background work: agent replies, reminder flows |
+
+## How a client message is answered
+
+Kapso posts the message to `/api/webhooks/kapso/messages`. Ikarus stores it (creating the client on first contact) and sends an Inngest event. The `agent-reply` function runs one conversation at a time per client: it loads the business's services, opening hours, intake questions and the last 30 messages, and lets Claude answer using the tools in `src/lib/agent/tools.ts`. Bookings only happen through those tools, which re-check the calendar inside a transaction; the database's exclusion constraint is the last guard against double booking.
 
 ## Checks
 
