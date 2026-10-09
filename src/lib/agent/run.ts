@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { upcomingAppointments } from "@/lib/booking/service";
 import { household as loadHousehold } from "@/lib/household";
-import { sendText } from "@/lib/kapso/client";
+import { sendText, sendTyping } from "@/lib/kapso/client";
 import { loadIntakeFields, missingIntake, reloadClient, type Business, type Client } from "./context";
 import { ensureConsent } from "./consent";
 import { EMERGENCY_REPLY, isEmergency } from "./emergency";
@@ -91,8 +91,10 @@ export async function runAgent(input: {
   const messages: ChatMessage[] = [{ role: "system", content: system }, ...toConversation(history)];
   const llm = input.llm ?? chatClient();
   let reply: string | null = null;
+  const typing = typingIndicator(business.phoneNumberId, history.at(-1)!.kapsoMessageId);
 
   for (let step = 0; step < MAX_STEPS; step++) {
+    await typing();
     const { message, finishReason } = await llm.complete({ model: env.LLM_MODEL, messages, tools: CHAT_TOOLS });
     const calls = message.tool_calls ?? [];
     messages.push({ role: "assistant", content: message.content ?? null, ...(calls.length ? { tool_calls: calls } : {}) });
@@ -124,6 +126,17 @@ export async function runAgent(input: {
 }
 
 type StoredMessage = typeof schema.messages.$inferSelect;
+
+// Shows "escribiendo…" while the agent works. WhatsApp drops it after 25
+// seconds, so a long run sends it again. Best effort: a failure never stops the reply.
+function typingIndicator(phoneNumberId: string, messageId: string | null) {
+  let shownAt = 0;
+  return async () => {
+    if (!messageId || Date.now() - shownAt < 20_000) return;
+    shownAt = Date.now();
+    await sendTyping(phoneNumberId, messageId).catch((err) => console.warn("typing indicator failed", err));
+  };
+}
 
 // Unanswered messages that describe an emergency get the fixed reply and a
 // handoff, without the LLM. Null when there is no emergency.

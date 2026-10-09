@@ -57,6 +57,8 @@ function fakeLlm(steps: ScriptedStep[]) {
   return { client: { complete } satisfies ChatClient, requests };
 }
 
+const isTyping = (body: unknown) => typeof body === "object" && body !== null && "typing_indicator" in body;
+
 // Results of the last batch of tool calls, the trailing "tool" messages.
 function lastToolResults(req: ChatRequest) {
   const results: { error: boolean; content: string }[] = [];
@@ -208,7 +210,13 @@ describe("booking agent", () => {
     expect(await theClient()).toMatchObject({ name: "Ana López", data: { fecha_nacimiento: "1990-05-04" }, dateOfBirth: "1990-05-04" });
     expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: appt.clientId } });
 
-    const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    // "escribiendo…" shows on the patient's message first, once for a quick run.
+    const [inbound] = await db.select().from(schema.messages).where(eq(schema.messages.direction, "inbound"));
+    const typing = kapso.calls.filter((c) => isTyping(c.body));
+    expect(typing).toHaveLength(1);
+    expect(typing[0].body).toEqual({ messaging_product: "whatsapp", status: "read", message_id: inbound.kapsoMessageId, typing_indicator: { type: "text" } });
+    expect(isTyping(kapso.calls[0].body)).toBe(true);
+    const send = kapso.calls.find((c) => c.path.endsWith("/messages") && !isTyping(c.body));
     expect(send?.path).toBe(`/meta/whatsapp/v24.0/${PHONE_ID}/messages`);
     expect(send?.body).toMatchObject({ to: CLIENT_PHONE, type: "text", text: { body: result.status === "replied" ? result.reply : "" } });
 
@@ -332,7 +340,7 @@ describe("booking agent", () => {
     });
     expect(claude.requests).toHaveLength(0);
     expect(await theClient()).toMatchObject({ agentPaused: true });
-    const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    const send = kapso.calls.find((c) => c.path.endsWith("/messages") && !isTyping(c.body));
     expect(send?.body).toMatchObject({ text: { body: expect.stringContaining("911") } });
 
     // A paused patient still gets it, but not again within half an hour.
@@ -341,7 +349,7 @@ describe("booking agent", () => {
       status: "emergency",
       replied: false,
     });
-    expect(kapso.calls.filter((c) => c.path.endsWith("/messages"))).toHaveLength(1);
+    expect(kapso.calls.filter((c) => c.path.endsWith("/messages") && !isTyping(c.body))).toHaveLength(1);
   });
 
   it("only cancels the client's own appointments", async () => {
@@ -411,7 +419,7 @@ describe("several patients on one number", () => {
     expect(appt).toMatchObject({ clientId: son.id, status: "booked" });
     // Reminders for the son go through the mother's conversation.
     expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: mother.id } });
-    const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    const send = kapso.calls.find((c) => c.path.endsWith("/messages") && !isTyping(c.body));
     expect(send?.body).toMatchObject({ to: CLIENT_PHONE });
     // The prompt tells the model to ask who the appointment is for.
     expect(String(claude.requests[0].messages[0].content)).toContain("¿La cita es para usted o para otra persona?");
@@ -460,7 +468,7 @@ describe("consent", () => {
 
     expect(await run()).toEqual({ status: "consent_requested" });
     expect(claude.requests).toHaveLength(0);
-    const ask = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    const ask = kapso.calls.find((c) => c.path.endsWith("/messages") && !isTyping(c.body));
     expect(ask?.body).toMatchObject({
       type: "interactive",
       interactive: { type: "button", action: { buttons: [{ type: "reply", reply: { id: "consent:accept", title: "Acepto" } }] } },
