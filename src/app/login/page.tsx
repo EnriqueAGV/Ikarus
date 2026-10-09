@@ -1,3 +1,4 @@
+import { SubmitButton } from "@/components/submit-button";
 import { sendMagicLink } from "./actions";
 
 export const instant = false;
@@ -5,6 +6,7 @@ export const instant = false;
 const errors: Record<string, string> = {
   email: "Escribe tu correo.",
   send: "No pudimos enviar el enlace. ¿Tu cuenta ya fue invitada?",
+  wait: "Ya te enviamos un enlace hace poco. Espera un minuto y usa el último correo que recibiste.",
   callback: "El enlace no es válido o ya expiró. Pide uno nuevo.",
 };
 
@@ -34,9 +36,12 @@ export default async function LoginPage({
               className="rounded-md border px-3 py-2"
             />
           </label>
-          <button className="rounded-md bg-black px-3 py-2 text-white dark:bg-white dark:text-black">
+          <SubmitButton
+            pendingText="Enviando…"
+            className="rounded-md bg-black px-3 py-2 text-white disabled:opacity-60 dark:bg-white dark:text-black"
+          >
             Enviarme un enlace
-          </button>
+          </SubmitButton>
         </form>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
