@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type { ChatTool } from "./llm";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/booking/service";
 import { type Business, type Client, type IntakeField, missingIntake, reloadClient } from "./context";
 
-type Tool = Anthropic.Beta.BetaTool;
+type Tool = { name: string; description: string; input_schema: Record<string, unknown> };
 
 const obj = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({
   type: "object" as const,
@@ -28,7 +28,6 @@ export const TOOLS: Tool[] = [
     name: "save_client_info",
     description:
       "Save the client's name and/or answers to the business's intake questions. Call it as soon as the client gives any of them.",
-    strict: true,
     input_schema: obj({
       name: { type: ["string", "null"], description: "Client's full name, or null if not given now" },
       answers: {
@@ -41,14 +40,12 @@ export const TOOLS: Tool[] = [
   {
     name: "list_services",
     description: "List the services the business offers, with their ids and durations.",
-    strict: true,
     input_schema: obj({}),
   },
   {
     name: "find_available_slots",
     description:
       "Find free start times for a service between two local dates (inclusive, at most 14 days apart).",
-    strict: true,
     input_schema: obj({
       service_id: { type: "string" },
       date_from: { type: "string", description: "YYYY-MM-DD" },
@@ -59,36 +56,37 @@ export const TOOLS: Tool[] = [
     name: "book_appointment",
     description:
       "Book the client into a free slot returned by find_available_slots. Only after the client confirmed the service, day and time.",
-    strict: true,
     input_schema: obj({ service_id: { type: "string" }, start: localDateTime }),
   },
   {
     name: "list_my_appointments",
     description: "List this client's upcoming appointments.",
-    strict: true,
     input_schema: obj({}),
   },
   {
     name: "cancel_appointment",
     description: "Cancel one of this client's upcoming appointments, after the client confirmed.",
-    strict: true,
     input_schema: obj({ appointment_id: { type: "string" } }),
   },
   {
     name: "reschedule_appointment",
     description:
       "Move one of this client's upcoming appointments to a new free slot of the same service. If the new time is taken, the original appointment is kept.",
-    strict: true,
     input_schema: obj({ appointment_id: { type: "string" }, new_start: localDateTime }),
   },
   {
     name: "handoff_to_business",
     description:
       "Pass the conversation to the business's staff and stop answering automatically. Use when the client needs a human.",
-    strict: true,
     input_schema: obj({ reason: { type: "string" } }),
   },
 ];
+
+// The same tools in the Chat Completions format.
+export const CHAT_TOOLS: ChatTool[] = TOOLS.map((t) => ({
+  type: "function",
+  function: { name: t.name, description: t.description, parameters: t.input_schema },
+}));
 
 export type ToolContext = { business: Business; client: Client; fields: IntakeField[]; now: Date };
 export type ToolOutcome = { result: unknown; isError?: boolean; handoff?: boolean };
