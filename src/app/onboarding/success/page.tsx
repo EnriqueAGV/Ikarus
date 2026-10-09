@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import Link from "next/link";
 import { connectPhoneNumber } from "@/lib/onboarding";
 
@@ -26,6 +27,7 @@ export default async function OnboardingSuccessPage({
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 px-4 text-center">
+      <Logo className="mx-auto mb-3 h-9 w-auto" />
       {connected ? (
         <>
           <h1 className="text-2xl font-semibold">¡Listo! Tu WhatsApp quedó conectado</h1>
@@ -33,7 +35,7 @@ export default async function OnboardingSuccessPage({
           <p className="text-sm text-neutral-500">
             Te enviamos un correo con el enlace a tu panel, donde configuras tus servicios y horarios.
           </p>
-          <Link href="/app" className="mx-auto rounded-md bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-neutral-900">
+          <Link href="/app" className="mx-auto rounded-md bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover">
             Entrar a mi panel
           </Link>
         </>

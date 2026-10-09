@@ -45,7 +45,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           {client.agentPaused ? (
             <div className="flex flex-col items-end gap-1">
               <span className="text-sm text-amber-700 dark:text-amber-300">El asistente está en pausa con este cliente.</span>
-              <button className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900">
+              <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
                 Reactivar asistente
               </button>
             </div>
@@ -120,7 +120,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           <textarea name="text" rows={2} required placeholder="Responder como el negocio" className="rounded-md border px-3 py-2 text-sm" />
           <div className="flex items-center justify-between gap-2">
             <p className="text-xs text-neutral-500">Al responder, el asistente se pausa con este cliente.</p>
-            <button className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900">
+            <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
               Enviar por WhatsApp
             </button>
           </div>

@@ -48,7 +48,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
             <Link
               key={v}
               href={href(v)}
-              className={`rounded px-3 py-1 ${view === v ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900" : ""}`}
+              className={`rounded px-3 py-1 ${view === v ? "bg-brand text-white" : ""}`}
             >
               {{ day: "Día", week: "Semana", list: "Próximas" }[v]}
             </Link>
@@ -83,7 +83,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           {Array.from({ length: 7 }, (_, i) => shiftDate(from, i)).map((d) => {
             const dayRows = rows.filter((r) => formatLocal(r.appointment.startsAt, tz, "yyyy-MM-dd") === d);
             return (
-              <section key={d} className={`rounded-md border p-2 ${d === today ? "border-neutral-900 dark:border-white" : ""}`}>
+              <section key={d} className={`rounded-md border p-2 ${d === today ? "border-brand" : ""}`}>
                 <Link href={href("day", d)} className="mb-2 block text-xs font-medium capitalize hover:underline">
                   {formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}
                 </Link>

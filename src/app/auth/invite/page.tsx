@@ -32,7 +32,7 @@ export default function InvitePage() {
           <p className="text-sm text-neutral-500">
             Puede que haya expirado o que ya lo hayas usado. Pide un enlace nuevo para crear tu contraseña.
           </p>
-          <a href="/login/forgot" className="mx-auto rounded-md bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-neutral-900">
+          <a href="/login/forgot" className="mx-auto rounded-md bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover">
             Pedir un enlace nuevo
           </a>
         </>

@@ -17,7 +17,7 @@ import {
 
 const input = "rounded-md border px-2 py-1 text-sm";
 const button = "rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900";
-const primary = "rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900";
+const primary = "rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover";
 const hhmm = (t: string | null) => t?.slice(0, 5) ?? "";
 // Monday first, as the week view shows it.
 const WEEK = [1, 2, 3, 4, 5, 6, 0];

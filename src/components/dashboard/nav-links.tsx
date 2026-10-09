@@ -14,7 +14,7 @@ export function NavLinks({ links }: { links: { href: string; label: string; exac
             key={l.href}
             href={l.href}
             className={`whitespace-nowrap rounded-md px-3 py-1.5 ${
-              active ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-900" : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
+              active ? "bg-brand text-white" : "hover:bg-neutral-100 dark:hover:bg-neutral-900"
             }`}
           >
             {l.label}
