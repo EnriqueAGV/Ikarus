@@ -104,7 +104,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
         </ul>
         <form action={createServiceAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
           <Field label="Nuevo servicio">
-            <input name="name" required placeholder="Corte de cabello" className={`${input} w-56`} />
+            <input name="name" required placeholder="Consulta general" className={`${input} w-56`} />
           </Field>
           <Field label="Duración (min)">
             <input name="durationMin" type="number" min={5} max={720} defaultValue={60} className={`${input} w-24`} />
@@ -249,16 +249,26 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
               className={`${input} w-24`}
             />
           </Field>
-          <p className="text-xs text-neutral-500">
-            Si el cliente no responde, se envía un seguimiento a las 2 horas, y la cita se cancela 2 horas después.
-          </p>
+          <fieldset className="flex flex-col gap-1 text-sm">
+            <legend className="mb-1 text-xs text-neutral-500">
+              Si el paciente no responde, se envía un seguimiento a las 2 horas. Si 2 horas después sigue sin responder:
+            </legend>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="reminderEndPolicy" value="escalate" defaultChecked={business.reminderEndPolicy === "escalate"} />
+              La cita se mantiene y se marca &ldquo;Sin confirmar, llamar&rdquo; para que el equipo llame al paciente
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="reminderEndPolicy" value="auto_cancel" defaultChecked={business.reminderEndPolicy === "auto_cancel"} />
+              La cita se cancela sola y se le avisa al paciente
+            </label>
+          </fieldset>
           <Field label="Indicaciones para el asistente (opcional)">
             <textarea
               name="agentInstructions"
               rows={4}
               maxLength={4000}
               defaultValue={business.agentInstructions ?? ""}
-              placeholder="Ej.: Estamos en Av. Reforma 123. Pide llegar 10 minutos antes."
+              placeholder="Ej.: Estamos en Colonia Escalón, Paseo General Escalón 123. Pedir llegar 10 minutos antes."
               className={`${input} w-full`}
             />
           </Field>

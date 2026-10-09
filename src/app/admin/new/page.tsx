@@ -3,6 +3,7 @@ import { requireSuperAdmin } from "@/lib/auth";
 import { createBusinessAction } from "../actions";
 
 const TIMEZONES = [
+  ["America/El_Salvador", "El Salvador"],
   ["America/Mexico_City", "México (Ciudad de México)"],
   ["America/Tijuana", "México (Tijuana)"],
   ["America/Bogota", "Colombia"],
@@ -17,7 +18,7 @@ const TIMEZONES = [
 
 const errors: Record<string, string> = {
   invalid: "Revisa los datos: nombre del consultorio, nombre del doctor y su correo son obligatorios.",
-  failed: "No se pudo crear el negocio. Revisa las claves de Kapso y Supabase.",
+  failed: "No se pudo crear el consultorio. Revisa las claves de Kapso y Supabase.",
 };
 
 export default async function NewBusinessPage({ searchParams }: PageProps<"/admin/new">) {
@@ -28,14 +29,14 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
   return (
     <main className="mx-auto w-full max-w-lg flex-1 px-4 py-8">
       <Link href="/admin" className="text-sm text-neutral-500 hover:underline">
-        ← Negocios
+        ← Consultorios
       </Link>
-      <h1 className="mb-6 mt-2 text-2xl font-semibold">Nuevo negocio</h1>
+      <h1 className="mb-6 mt-2 text-2xl font-semibold">Nuevo consultorio</h1>
       <form action={createBusinessAction} className="flex flex-col gap-4">
-        <Field label="Nombre del negocio" name="name" required />
+        <Field label="Nombre del consultorio" name="name" required />
         <label className="flex flex-col gap-1 text-sm">
           Zona horaria
-          <select name="timezone" className="rounded-md border px-3 py-2" defaultValue="America/Mexico_City">
+          <select name="timezone" className="rounded-md border px-3 py-2" defaultValue="America/El_Salvador">
             {TIMEZONES.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
@@ -52,7 +53,7 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
         <button className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover">
-          Crear negocio y enlace
+          Crear consultorio y enlace
         </button>
       </form>
     </main>

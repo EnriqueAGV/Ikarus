@@ -303,9 +303,11 @@ export async function moveIntakeField(businessId: string, fieldId: string, direc
   });
 }
 
+export type ReminderEndPolicy = (typeof schema.reminderEndPolicy.enumValues)[number];
+
 export async function updateBusinessSettings(
   businessId: string,
-  input: { reminderLeadHours: number; agentInstructions: string },
+  input: { reminderLeadHours: number; agentInstructions: string; reminderEndPolicy?: ReminderEndPolicy },
 ) {
   if (!Number.isInteger(input.reminderLeadHours) || input.reminderLeadHours < 1 || input.reminderLeadHours > 168) {
     throw new SettingsError("invalid_reminder_hours");
@@ -316,6 +318,7 @@ export async function updateBusinessSettings(
     .set({
       reminderLeadHours: input.reminderLeadHours,
       agentInstructions: input.agentInstructions.trim() || null,
+      ...(input.reminderEndPolicy ? { reminderEndPolicy: input.reminderEndPolicy } : {}),
     })
     .where(eq(schema.businesses.id, businessId));
 }

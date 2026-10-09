@@ -60,12 +60,12 @@ export default async function AdminBusinessPage({
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
       <Link href="/admin" className="text-sm text-neutral-500 hover:underline">
-        ← Negocios
+        ← Consultorios
       </Link>
       <header className="mb-6 mt-2 flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold">{business.name}</h1>
         <Link href={`/app/${business.id}`} className="text-sm hover:underline">
-          Abrir panel del negocio →
+          Abrir panel del consultorio →
         </Link>
       </header>
 
@@ -80,7 +80,7 @@ export default async function AdminBusinessPage({
             {current ? (
               <>
                 <p className="text-sm text-neutral-500">
-                  Envía este enlace al negocio. Vence el {dateFmt.format(current.expiresAt)}.
+                  Envía este enlace al consultorio. Vence el {dateFmt.format(current.expiresAt)}.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="break-all rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-900">

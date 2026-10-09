@@ -48,7 +48,7 @@ beforeEach(async () => {
   );
   [business] = await db
     .insert(schema.businesses)
-    .values({ name: "Estética Luna", status: "connected", phoneNumberId: PHONE_ID, reminderLeadHours: 24 })
+    .values({ name: "Consultorio San Benito", status: "connected", phoneNumberId: PHONE_ID, reminderLeadHours: 24, timezone: "America/Mexico_City" })
     .returning();
   [{ id: clientId }] = await db
     .insert(schema.clients)
@@ -63,7 +63,7 @@ beforeEach(async () => {
     .values({ businessId: business.id, displayName: "Dra. Ana Ruiz" })
     .returning();
   await db.insert(schema.templates).values(
-    ["ikarus_recordatorio", "ikarus_seguimiento", "ikarus_cita_cancelada"].map((name) => ({
+    ["praxia_recordatorio", "praxia_seguimiento", "praxia_seguimiento_aviso", "praxia_cita_cancelada"].map((name) => ({
       businessId: business.id,
       name,
       status: "APPROVED" as const,
@@ -129,7 +129,22 @@ function fakeStep(waits: Array<"reply" | "timeout" | ((now: Date) => Promise<voi
 }
 
 describe("reminder flow", () => {
-  it("reminds at the lead time, follows up, then auto-cancels and tells the client", async () => {
+  it("reminds at the lead time, follows up, then flags the appointment for a call", async () => {
+    vi.setSystemTime(BOOKED_AT);
+    const a = await appointment();
+    const { step } = fakeStep(["timeout", "timeout"]);
+    const result = await remindersFlow({ event: { data: { appointmentId: a.id, clientId } }, step });
+
+    expect(result).toEqual({ status: "escalated" });
+    // The follow-up does not threaten a cancellation that won't happen.
+    expect(templateSends().map((t) => t.template!.name)).toEqual(["praxia_recordatorio", "praxia_seguimiento"]);
+    const [row] = await db.select().from(schema.appointments).where(eq(schema.appointments.id, a.id));
+    expect(row.status).toBe("followup_sent");
+    expect(row.escalatedAt?.toISOString()).toBe("2026-10-13T20:00:00.000Z");
+  });
+
+  it("with auto-cancel, warns in the follow-up, then cancels and tells the patient", async () => {
+    await db.update(schema.businesses).set({ reminderEndPolicy: "auto_cancel" }).where(eq(schema.businesses.id, business.id));
     vi.setSystemTime(BOOKED_AT);
     const a = await appointment();
     const { step, log } = fakeStep(["timeout", "timeout"]);
@@ -138,9 +153,9 @@ describe("reminder flow", () => {
     expect(result).toEqual({ status: "cancelled", notified: true });
     expect(log[1]).toBe("sleep:2026-10-13T16:00:00.000Z");
     expect(templateSends().map((t) => t.template!.name)).toEqual([
-      "ikarus_recordatorio",
-      "ikarus_seguimiento",
-      "ikarus_cita_cancelada",
+      "praxia_recordatorio",
+      "praxia_seguimiento_aviso",
+      "praxia_cita_cancelada",
     ]);
     const [first] = templateSends();
     expect(first.template!.components).toEqual([
@@ -148,8 +163,8 @@ describe("reminder flow", () => {
         type: "body",
         parameters: [
           { type: "text", parameter_name: "nombre", text: "Ana" },
-          { type: "text", parameter_name: "servicio", text: "Corte de cabello" },
-          { type: "text", parameter_name: "negocio", text: "Estética Luna" },
+          { type: "text", parameter_name: "consultorio", text: "Consultorio San Benito" },
+          { type: "text", parameter_name: "doctor", text: "Dra. Ana Ruiz" },
           { type: "text", parameter_name: "fecha", text: "miércoles 14 de octubre" },
           { type: "text", parameter_name: "hora", text: "10:00" },
         ],
@@ -167,7 +182,7 @@ describe("reminder flow", () => {
     // The conversation shows what the client received.
     const outbound = await db.select().from(schema.messages).orderBy(schema.messages.createdAt);
     expect(outbound[0].body).toBe(
-      "Hola Ana, te recordamos tu cita de Corte de cabello en Estética Luna el miércoles 14 de octubre a las 10:00. ¿Nos confirmas tu asistencia?",
+      "Hola Ana, le recordamos su cita en Consultorio San Benito con Dra. Ana Ruiz el miércoles 14 de octubre a las 10:00. ¿Nos confirma su asistencia?",
     );
   });
 

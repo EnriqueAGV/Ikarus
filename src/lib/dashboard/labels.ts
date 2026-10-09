@@ -6,12 +6,26 @@ export const appointmentStatusLabel = {
   reminder_sent: "Recordatorio enviado",
   followup_sent: "Seguimiento enviado",
   confirmed: "Confirmada",
-  cancelled_by_client: "Cancelada por el cliente",
-  cancelled_by_business: "Cancelada por el negocio",
+  cancelled_by_client: "Cancelada por el paciente",
+  cancelled_by_business: "Cancelada por el consultorio",
   auto_cancelled: "Cancelada sin respuesta",
   completed: "Atendida",
   no_show: "No asistió",
 } as const;
+
+type Labeled = { status: keyof typeof appointmentStatusLabel; escalatedAt: Date | null };
+const awaitingReply = new Set(["reminder_sent", "followup_sent"]);
+
+// An unanswered appointment the team should call about reads as such.
+export function appointmentLabel(a: Labeled) {
+  return a.escalatedAt && awaitingReply.has(a.status) ? "Sin confirmar, llamar" : appointmentStatusLabel[a.status];
+}
+
+export function appointmentTone(a: Labeled) {
+  return a.escalatedAt && awaitingReply.has(a.status)
+    ? "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
+    : appointmentStatusTone[a.status];
+}
 
 export const appointmentStatusTone: Record<keyof typeof appointmentStatusLabel, string> = {
   booked: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
@@ -43,10 +57,10 @@ export const settingsErrorLabel: Record<string, string> = {
   invalid_reminder_hours: "El recordatorio debe enviarse entre 1 y 168 horas antes.",
   instructions_too_long: "Las instrucciones son demasiado largas (máximo 4000 caracteres).",
   invalid_email: "Correo no válido.",
-  last_owner: "El negocio debe tener al menos un dueño.",
+  last_owner: "El consultorio debe tener al menos un dueño.",
   invite_failed: "No se pudo invitar a esa persona.",
-  window_closed: "Solo puedes escribir en las 24 horas siguientes al último mensaje del cliente.",
-  not_connected: "El WhatsApp del negocio no está conectado.",
+  window_closed: "Solo puedes escribir en las 24 horas siguientes al último mensaje del paciente.",
+  not_connected: "El WhatsApp del consultorio no está conectado.",
   send_failed: "No se pudo enviar el mensaje.",
   empty: "Escribe un mensaje.",
 };

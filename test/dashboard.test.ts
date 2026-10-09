@@ -33,6 +33,7 @@ const { eq, sql } = await import("drizzle-orm");
 const settings = await import("@/lib/dashboard/settings");
 const dashboard = await import("@/lib/dashboard/appointments");
 const team = await import("@/lib/dashboard/team");
+const labels = await import("@/lib/dashboard/labels");
 const { sendStaffReply } = await import("@/lib/messaging/staff");
 const { availableSlots, bookAppointment, rescheduleByClient } = await import("@/lib/booking/service");
 const { createPractitioner } = await import("@/lib/booking/practitioners");
@@ -136,7 +137,10 @@ describe("services and intake", () => {
     );
     await settings.updateBusinessSettings(business.id, { reminderLeadHours: 48, agentInstructions: "  Llega 10 min antes " });
     const [b] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, business.id));
-    expect(b).toMatchObject({ reminderLeadHours: 48, agentInstructions: "Llega 10 min antes" });
+    expect(b).toMatchObject({ reminderLeadHours: 48, agentInstructions: "Llega 10 min antes", reminderEndPolicy: "escalate" });
+    await settings.updateBusinessSettings(business.id, { reminderLeadHours: 48, agentInstructions: "", reminderEndPolicy: "auto_cancel" });
+    const [after] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, business.id));
+    expect(after.reminderEndPolicy).toBe("auto_cancel");
   });
 });
 
@@ -157,6 +161,22 @@ describe("appointments from the dashboard", () => {
     expect(sent).toEqual([{ name: "appointment/cancelled", data: { appointmentId: appointment.id, businessId: business.id, clientId } }]);
     const again = await bookAppointment({ business, clientId, serviceId: service.id, localStart: "2026-10-12T11:00", now: NOW });
     expect(again.ok).toBe(true);
+  });
+
+  it("lists unanswered appointments to call and lets the team confirm them", async () => {
+    const { appointment } = await book("2026-10-12T11:00");
+    await db
+      .update(schema.appointments)
+      .set({ status: "followup_sent", escalatedAt: NOW })
+      .where(eq(schema.appointments.id, appointment.id));
+    const toCall = await dashboard.needingCall(business.id, NOW);
+    expect(toCall.map((r) => r.appointment.id)).toEqual([appointment.id]);
+    expect(labels.appointmentLabel(toCall[0].appointment)).toBe("Sin confirmar, llamar");
+
+    const confirmed = await dashboard.updateAppointmentByBusiness(business.id, appointment.id, "confirm", NOW);
+    expect(confirmed).toMatchObject({ status: "confirmed" });
+    expect(labels.appointmentLabel(confirmed!)).toBe("Confirmada");
+    expect(await dashboard.needingCall(business.id, NOW)).toEqual([]);
   });
 
   it("records outcomes only after the appointment started", async () => {
@@ -202,7 +222,7 @@ describe("staff replies", () => {
     const history = await db.select().from(schema.messages).orderBy(schema.messages.createdAt);
     expect(toConversation(history).at(-1)).toEqual({
       role: "assistant",
-      content: "[Escrito por el equipo del negocio, no por ti]\nHola Ana, soy Luz",
+      content: "[Escrito por el equipo del consultorio, no por ti]\nHola Ana, soy Luz",
     });
 
     await dashboard.setAgentPaused(business.id, clientId, false);

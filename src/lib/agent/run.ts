@@ -4,7 +4,8 @@ import { env } from "@/lib/env";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { upcomingAppointments } from "@/lib/booking/service";
 import { sendText } from "@/lib/kapso/client";
-import { loadIntakeFields, missingIntake, reloadClient } from "./context";
+import { loadIntakeFields, missingIntake, reloadClient, type Business, type Client } from "./context";
+import { EMERGENCY_REPLY, isEmergency } from "./emergency";
 import { staticSystemPrompt, turnContext } from "./prompt";
 import { chatClient, type ChatClient, type ChatMessage } from "./llm";
 import { CHAT_TOOLS, runTool, type ToolContext } from "./tools";
@@ -12,10 +13,13 @@ import { CHAT_TOOLS, runTool, type ToolContext } from "./tools";
 const HISTORY_LIMIT = 30;
 const MAX_STEPS = 10;
 const FALLBACK_REPLY =
-  "Gracias por tu mensaje. En un momento alguien del equipo te responde.";
+  "Gracias por su mensaje. En un momento alguien del consultorio le responde.";
+// One emergency reply covers a burst of messages about the same situation.
+const EMERGENCY_REPEAT_MS = 30 * 60_000;
 
 export type AgentRunResult =
   | { status: "replied"; reply: string }
+  | { status: "emergency"; replied: boolean }
   | { status: "skipped"; reason: "not_found" | "paused" | "already_answered" };
 
 // Answers the client's latest messages. Runs inside an Inngest function that
@@ -34,6 +38,10 @@ export async function runAgent(input: {
     .where(eq(schema.businesses.id, input.businessId));
   const client = await reloadClient(input.businessId, input.clientId);
   if (!business?.phoneNumberId || !client) return { status: "skipped", reason: "not_found" };
+  // Checked before the pause: a patient already handed to the team still
+  // gets pointed to 911.
+  const emergency = await answerEmergency(business, client, now);
+  if (emergency) return emergency;
   if (client.agentPaused) return { status: "skipped", reason: "paused" };
 
   const history = (
@@ -107,6 +115,41 @@ export async function runAgent(input: {
 
 type StoredMessage = typeof schema.messages.$inferSelect;
 
+// Unanswered messages that describe an emergency get the fixed reply and a
+// handoff, without the LLM. Null when there is no emergency.
+async function answerEmergency(business: Business, client: Client, now: Date): Promise<AgentRunResult | null> {
+  const recent = await db
+    .select()
+    .from(schema.messages)
+    .where(eq(schema.messages.clientId, client.id))
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(HISTORY_LIMIT);
+  const lastOutbound = recent.findIndex((m) => m.direction === "outbound");
+  const unanswered = lastOutbound === -1 ? recent : recent.slice(0, lastOutbound);
+  if (!unanswered.some((m) => m.direction === "inbound" && isEmergency(m.body))) return null;
+
+  await db.update(schema.clients).set({ agentPaused: true }).where(eq(schema.clients.id, client.id));
+  const lastEmergencyReply = recent.find((m) => m.direction === "outbound" && isEmergencyReply(m));
+  if (lastEmergencyReply && now.getTime() - lastEmergencyReply.createdAt.getTime() < EMERGENCY_REPEAT_MS) {
+    return { status: "emergency", replied: false };
+  }
+  const kapsoMessageId = await sendText(business.phoneNumberId!, client.waPhone, EMERGENCY_REPLY);
+  await db.insert(schema.messages).values({
+    businessId: business.id,
+    clientId: client.id,
+    direction: "outbound",
+    kapsoMessageId,
+    type: "text",
+    body: EMERGENCY_REPLY,
+    payload: { emergency: true },
+  });
+  return { status: "emergency", replied: true };
+}
+
+function isEmergencyReply(m: StoredMessage) {
+  return typeof m.payload === "object" && m.payload !== null && "emergency" in m.payload;
+}
+
 // Stored WhatsApp history as chat turns, starting at the client's first message.
 export function toConversation(history: StoredMessage[]): ChatMessage[] {
   const firstInbound = history.findIndex((m) => m.direction === "inbound");
@@ -115,7 +158,7 @@ export function toConversation(history: StoredMessage[]): ChatMessage[] {
     .filter((m) => m.body?.trim())
     .map((m) => ({
       role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const),
-      content: sentByStaff(m) ? `[Escrito por el equipo del negocio, no por ti]\n${m.body}` : m.body!,
+      content: sentByStaff(m) ? `[Escrito por el equipo del consultorio, no por ti]\n${m.body}` : m.body!,
     }));
 }
 

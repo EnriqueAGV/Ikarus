@@ -5,14 +5,15 @@ import { requireBusinessAccess } from "@/lib/auth";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import {
   appointmentsBetween,
+  needingCall,
   shiftDate,
   todayIn,
   upcomingForBusiness,
   weekStart,
 } from "@/lib/dashboard/appointments";
 import {
-  appointmentStatusLabel,
-  appointmentStatusTone,
+  appointmentLabel,
+  appointmentTone,
   formatLocal,
   formatPhone,
 } from "@/lib/dashboard/labels";
@@ -41,10 +42,29 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
     view === "list" ? await upcomingForBusiness(business.id) : await appointmentsBetween(business, from, shiftDate(from, days));
   // The doctor only shows once the clinic has a second one.
   const showDoctor = (await listPractitioners(business.id)).length > 1;
+  const toCall = await needingCall(business.id);
   const now = new Date();
 
   return (
     <div className="flex flex-col gap-4">
+      {toCall.length > 0 && (
+        <section className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+          <p className="font-medium">
+            {toCall.length === 1 ? "1 paciente no confirmó su cita" : `${toCall.length} pacientes no confirmaron su cita`}. Llámalos para confirmar o cancelar.
+          </p>
+          <ul className="mt-1">
+            {toCall.map((r) => (
+              <li key={r.appointment.id}>
+                <Link href={`${base}/clients/${r.appointment.clientId}`} className="hover:underline">
+                  <span className="capitalize">{formatLocal(r.appointment.startsAt, tz, "EEE d MMM, HH:mm")}</span> ·{" "}
+                  {r.clientName ?? formatPhone(r.clientPhone)} · {formatPhone(r.clientPhone)}
+                  {showDoctor && ` · ${r.practitionerName}`}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 rounded-md border p-0.5 text-sm">
           {(["day", "week", "list"] as const).map((v) => (
@@ -95,7 +115,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                     <li key={r.appointment.id}>
                       <Link
                         href={`${base}/clients/${r.appointment.clientId}`}
-                        className={`block rounded px-2 py-1 text-xs ${appointmentStatusTone[r.appointment.status]}`}
+                        className={`block rounded px-2 py-1 text-xs ${appointmentTone(r.appointment)}`}
                       >
                         <span className="font-medium">{formatLocal(r.appointment.startsAt, tz, "HH:mm")}</span>{" "}
                         {r.clientName ?? formatPhone(r.clientPhone)}
@@ -145,7 +165,7 @@ function AppointmentRow({
   const a = row.appointment;
   const isLive = live.has(a.status);
   const started = a.startsAt <= now;
-  const act = (action: "cancel" | "completed" | "no_show") => appointmentAction.bind(null, a.businessId, a.id, action);
+  const act = (action: "confirm" | "cancel" | "completed" | "no_show") => appointmentAction.bind(null, a.businessId, a.id, action);
 
   return (
     <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -165,9 +185,12 @@ function AppointmentRow({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded px-2 py-0.5 text-xs ${appointmentStatusTone[a.status]}`}>
-          {appointmentStatusLabel[a.status]}
-        </span>
+        <span className={`rounded px-2 py-0.5 text-xs ${appointmentTone(a)}`}>{appointmentLabel(a)}</span>
+        {isLive && !started && a.status !== "confirmed" && (
+          <form action={act("confirm")}>
+            <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">Confirmar</button>
+          </form>
+        )}
         {isLive && started && (
           <>
             <form action={act("completed")}>

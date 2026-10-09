@@ -42,7 +42,7 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
               <span className="text-neutral-500">{roleLabel[m.role]}</span>
               <form action={removeMemberAction.bind(null, business.id, m.memberId)}>
                 <ConfirmButton
-                  message={m.userId === profile.id ? "¿Quitarte del negocio? Perderás el acceso." : `¿Quitar a ${m.email}?`}
+                  message={m.userId === profile.id ? "¿Quitarte del consultorio? Perderás el acceso." : `¿Quitar a ${m.email}?`}
                   className="text-xs text-red-700 hover:underline dark:text-red-400"
                 >
                   Quitar
@@ -57,12 +57,12 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
       <form action={inviteMemberAction.bind(null, business.id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Correo
-          <input name="email" type="email" required placeholder="persona@negocio.com" className="w-64 rounded-md border px-2 py-1 text-sm" />
+          <input name="email" type="email" required placeholder="persona@consultorio.com" className="w-64 rounded-md border px-2 py-1 text-sm" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Rol
           <select name="role" defaultValue="staff" className="rounded-md border px-2 py-1 text-sm">
-            <option value="staff">Equipo: ve citas y clientes</option>
+            <option value="staff">Equipo: ve citas y pacientes</option>
             <option value="owner">Dueño: también ajustes y equipo</option>
           </select>
         </label>

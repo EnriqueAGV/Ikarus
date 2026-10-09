@@ -23,7 +23,7 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
       </form>
       {rows.length === 0 ? (
         <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
-          {query ? "Ningún cliente coincide con la búsqueda." : "Aún no hay clientes. Aparecen cuando escriben por WhatsApp."}
+          {query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp."}
         </p>
       ) : (
         <ul className="divide-y rounded-md border">

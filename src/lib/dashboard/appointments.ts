@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { db, schema } from "@/db";
@@ -74,10 +74,11 @@ export async function upcomingForBusiness(businessId: string, now = new Date(), 
     .limit(limit);
 }
 
-export type BusinessAction = "cancel" | "completed" | "no_show";
+export type BusinessAction = "confirm" | "cancel" | "completed" | "no_show";
 
-// Staff actions on one appointment. Cancelling frees the slot and stops its
-// reminders; completed and no-show record what happened after it started.
+// Staff actions on one appointment. Confirming records a confirmation the
+// team got by phone; cancelling frees the slot and stops its reminders;
+// completed and no-show record what happened after it started.
 export async function updateAppointmentByBusiness(
   businessId: string,
   appointmentId: string,
@@ -89,7 +90,9 @@ export async function updateAppointmentByBusiness(
     .set(
       action === "cancel"
         ? { status: "cancelled_by_business", cancelledAt: now, cancelReason: "business" }
-        : { status: action },
+        : action === "confirm"
+          ? { status: "confirmed", confirmedAt: now }
+          : { status: action },
     )
     .where(
       and(
@@ -97,7 +100,7 @@ export async function updateAppointmentByBusiness(
         eq(schema.appointments.businessId, businessId),
         inArray(schema.appointments.status, LIVE),
         // Outcomes only make sense once the appointment has started.
-        action === "cancel" ? undefined : lt(schema.appointments.startsAt, now),
+        action === "cancel" || action === "confirm" ? undefined : lt(schema.appointments.startsAt, now),
       ),
     )
     .returning();
@@ -112,6 +115,26 @@ export async function updateAppointmentByBusiness(
     }
   }
   return row ?? null;
+}
+
+// Upcoming appointments whose patient never answered the reminders, in a
+// clinic that escalates instead of cancelling: the team should call them.
+export async function needingCall(businessId: string, now = new Date()) {
+  return db
+    .select(appointmentColumns)
+    .from(schema.appointments)
+    .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
+    .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+    .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
+    .where(
+      and(
+        eq(schema.appointments.businessId, businessId),
+        inArray(schema.appointments.status, ["reminder_sent", "followup_sent"]),
+        isNotNull(schema.appointments.escalatedAt),
+        gte(schema.appointments.endsAt, now),
+      ),
+    )
+    .orderBy(asc(schema.appointments.startsAt));
 }
 
 export async function listClients(businessId: string, query?: string) {

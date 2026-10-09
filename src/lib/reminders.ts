@@ -8,19 +8,24 @@ import { TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "@/lib/kapso/tem
 // The reminder flow for one appointment, as plain functions the Inngest
 // function calls step by step:
 //   reminder at (start - lead hours) -> 2h without reply -> follow-up
-//   -> 2h without reply -> auto-cancel and tell the client.
-// Any message from the client stops the flow; tapping "Confirmar" also marks
+//   -> 2h without reply -> the clinic's reminder_end_policy:
+//      escalate (default): the appointment stays booked and is flagged for the
+//        team to call the patient;
+//      auto_cancel: cancel it and tell the patient.
+// Any message from the patient stops the flow; tapping "Confirmar" also marks
 // the appointment confirmed.
 
 export const REPLY_WAIT = "2h";
 
 type Kind = "reminder" | "followup" | "cancelled";
+type Policy = (typeof schema.reminderEndPolicy.enumValues)[number];
 
-const templateFor: Record<Kind, TemplateName> = {
-  reminder: "ikarus_recordatorio",
-  followup: "ikarus_seguimiento",
-  cancelled: "ikarus_cita_cancelada",
-};
+function templateFor(kind: Kind, policy: Policy): TemplateName {
+  if (kind === "reminder") return "praxia_recordatorio";
+  if (kind === "cancelled") return "praxia_cita_cancelada";
+  // Only warn about a cancellation that will actually happen.
+  return policy === "auto_cancel" ? "praxia_seguimiento_aviso" : "praxia_seguimiento";
+}
 
 // Status an appointment must be in for each send, and the status it moves to.
 const transition = {
@@ -51,8 +56,9 @@ export async function sendReminder(appointmentId: string, kind: "reminder" | "fo
   const { appointment, business } = row;
   if (appointment.startsAt <= now) return { status: "skipped", reason: "already_started" };
   if (!business.phoneNumberId) return { status: "skipped", reason: "not_connected" };
-  if (!(await templateApproved(business.id, templateFor[kind]))) {
-    console.warn(`reminder skipped: ${templateFor[kind]} not approved for business ${business.id}`);
+  const template = templateFor(kind, business.reminderEndPolicy);
+  if (!(await templateApproved(business.id, template))) {
+    console.warn(`reminder skipped: ${template} not approved for business ${business.id}`);
     return { status: "skipped", reason: "template_not_approved" };
   }
 
@@ -98,6 +104,20 @@ export async function clientRepliedSince(appointmentId: string, since: string) {
 }
 
 export type CancelResult = { status: "cancelled"; notified: boolean } | { status: "skipped"; reason: "not_found" | "wrong_status" };
+export type EndResult = CancelResult | { status: "escalated" };
+
+// The patient answered neither the reminder nor the follow-up.
+export async function endUnanswered(appointmentId: string, now = new Date()): Promise<EndResult> {
+  const row = await load(appointmentId);
+  if (!row) return { status: "skipped", reason: "not_found" };
+  if (row.business.reminderEndPolicy === "auto_cancel") return autoCancel(appointmentId, now);
+  const [flagged] = await db
+    .update(schema.appointments)
+    .set({ escalatedAt: now })
+    .where(and(eq(schema.appointments.id, appointmentId), inArray(schema.appointments.status, ["reminder_sent", "followup_sent"])))
+    .returning();
+  return flagged ? { status: "escalated" } : { status: "skipped", reason: "wrong_status" };
+}
 
 export async function autoCancel(appointmentId: string, now = new Date()): Promise<CancelResult> {
   const [cancelled] = await db
@@ -108,7 +128,7 @@ export async function autoCancel(appointmentId: string, now = new Date()): Promi
   if (!cancelled) return { status: "skipped", reason: (await load(appointmentId)) ? "wrong_status" : "not_found" };
 
   const row = (await load(appointmentId))!;
-  if (!row.business.phoneNumberId || !(await templateApproved(row.business.id, templateFor.cancelled))) {
+  if (!row.business.phoneNumberId || !(await templateApproved(row.business.id, templateFor("cancelled", row.business.reminderEndPolicy)))) {
     return { status: "cancelled", notified: false };
   }
   await deliver(row, "cancelled", now, ["rebook"]);
@@ -154,12 +174,12 @@ async function load(appointmentId: string) {
       appointment: schema.appointments,
       business: schema.businesses,
       client: schema.clients,
-      serviceName: schema.services.name,
+      practitionerName: schema.practitioners.displayName,
     })
     .from(schema.appointments)
     .innerJoin(schema.businesses, eq(schema.businesses.id, schema.appointments.businessId))
     .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
-    .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
+    .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
     .where(eq(schema.appointments.id, appointmentId));
   return row ?? null;
 }
@@ -178,12 +198,12 @@ async function templateApproved(businessId: string, name: TemplateName) {
   return t?.status === "APPROVED";
 }
 
-export function templateParams(row: Pick<Loaded, "appointment" | "business" | "client" | "serviceName">) {
+export function templateParams(row: Pick<Loaded, "appointment" | "business" | "client" | "practitionerName">) {
   const tz = row.business.timezone;
   return {
-    nombre: row.client.name?.trim() || "cliente",
-    servicio: row.serviceName,
-    negocio: row.business.name,
+    nombre: row.client.name?.trim() || "paciente",
+    consultorio: row.business.name,
+    doctor: row.practitionerName,
     fecha: formatInTimeZone(row.appointment.startsAt, tz, "EEEE d 'de' MMMM", { locale: es }),
     hora: formatInTimeZone(row.appointment.startsAt, tz, "HH:mm"),
   };
@@ -192,7 +212,7 @@ export function templateParams(row: Pick<Loaded, "appointment" | "business" | "c
 // Sends the template and keeps a copy in the conversation, so the dashboard
 // and the agent both see what the client received.
 async function deliver(row: Loaded, kind: Kind, now: Date, buttonPayloads: string[]) {
-  const name = templateFor[kind];
+  const name = templateFor(kind, row.business.reminderEndPolicy);
   const template = TEMPLATES.find((t) => t.name === name)!;
   const all = templateParams(row);
   const bodyComponent = template.components.find((c): c is TemplateBody => c.type === "BODY")!;

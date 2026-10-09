@@ -25,19 +25,19 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
       <header className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold">Negocios</h1>
+        <h1 className="text-2xl font-semibold">Consultorios</h1>
         <div className="flex items-center gap-4">
           <Link
             href="/admin/new"
             className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover"
           >
-            Nuevo negocio
+            Nuevo consultorio
           </Link>
           <SignOutButton />
         </div>
       </header>
       {businesses.length === 0 ? (
-        <p className="text-sm text-neutral-500">Aún no hay negocios.</p>
+        <p className="text-sm text-neutral-500">Aún no hay consultorios.</p>
       ) : (
         <ul className="divide-y rounded-md border">
           {businesses.map((b) => (
