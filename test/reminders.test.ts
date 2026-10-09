@@ -74,12 +74,12 @@ beforeEach(async () => {
 afterEach(() => vi.useRealTimers());
 afterAll(() => kapso.close());
 
-async function appointment(startsAt = STARTS_AT, createdAt = BOOKED_AT) {
+async function appointment(startsAt = STARTS_AT, createdAt = BOOKED_AT, patientId = clientId) {
   const [a] = await db
     .insert(schema.appointments)
     .values({
       businessId: business.id,
-      clientId,
+      clientId: patientId,
       serviceId,
       practitionerId,
       startsAt,
@@ -292,3 +292,45 @@ describe("replies to a reminder", () => {
     expect(sent.map((e) => e.name)).toContain("client/replied");
   });
 });
+
+describe("a number shared by several patients", () => {
+  async function son(waPhone: string | null = CLIENT_PHONE) {
+    const [s] = await db
+      .insert(schema.clients)
+      .values({ businessId: business.id, waPhone, holderId: waPhone ? clientId : null, name: "Mateo" })
+      .returning();
+    return s.id;
+  }
+
+  it("reminds the holder about a dependent's appointment, and the holder's tap confirms it", async () => {
+    vi.setSystemTime(new Date("2026-10-13T16:00:00Z"));
+    const a = await appointment(STARTS_AT, BOOKED_AT, await son());
+    expect(await reminders.sendReminder(a.id, "reminder")).toMatchObject({ status: "sent" });
+    expect(kapso.calls.at(-1)?.body).toMatchObject({ to: CLIENT_PHONE, type: "template" });
+    const [stored] = await db.select().from(schema.messages);
+    expect(stored.clientId).toBe(clientId);
+
+    const body = { message: { id: "wamid.tap", from: CLIENT_PHONE, type: "button", button: { text: "Confirmar", payload: `confirm:${a.id}` } }, phone_number_id: PHONE_ID };
+    const raw = JSON.stringify(body);
+    await messagesRoute.POST(
+      new Request("https://ikarus.test/api/webhooks/kapso/messages", {
+        method: "POST",
+        body: raw,
+        headers: {
+          "x-webhook-event": "whatsapp.message.received",
+          "x-idempotency-key": "wamid.tap",
+          "x-webhook-signature": createHmac("sha256", "message-secret").update(raw).digest("hex"),
+        },
+      }),
+    );
+    expect(await statusOf(a.id)).toBe("confirmed");
+    // The holder's reply counts as an answer to the dependent's reminder.
+    expect(await reminders.clientRepliedSince(a.id, "2000-01-01T00:00:00Z")).toBe(true);
+  });
+
+  it("does not remind a patient with no WhatsApp", async () => {
+    const a = await appointment(STARTS_AT, BOOKED_AT, await son(null));
+    expect(await reminders.planReminder(a.id)).toMatchObject({ skip: "no_whatsapp" });
+  });
+});
+

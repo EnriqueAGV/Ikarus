@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { aliasedTable, and, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { es } from "date-fns/locale";
 import { formatInTimeZone } from "date-fns-tz";
 import { db, schema } from "@/db";
@@ -33,7 +33,7 @@ const transition = {
   followup: { from: "reminder_sent", to: "followup_sent", stamp: "followupSentAt" },
 } as const;
 
-export type Plan = { remindAt: string } | { skip: "not_found" | "not_live" | "booked_too_late" };
+export type Plan = { remindAt: string } | { skip: "not_found" | "not_live" | "booked_too_late" | "no_whatsapp" };
 
 // Bookings made closer to the appointment than the lead time get no reminder:
 // the client just booked, so asking them to confirm again adds nothing.
@@ -41,6 +41,7 @@ export async function planReminder(appointmentId: string): Promise<Plan> {
   const row = await load(appointmentId);
   if (!row) return { skip: "not_found" };
   if (row.appointment.status !== "booked") return { skip: "not_live" };
+  if (!row.conversation.waPhone) return { skip: "no_whatsapp" };
   const remindAt = new Date(row.appointment.startsAt.getTime() - row.business.reminderLeadHours * 3600_000);
   if (remindAt <= row.appointment.createdAt) return { skip: "booked_too_late" };
   return { remindAt: remindAt.toISOString() };
@@ -94,7 +95,7 @@ export async function clientRepliedSince(appointmentId: string, since: string) {
     .from(schema.messages)
     .where(
       and(
-        eq(schema.messages.clientId, row.appointment.clientId),
+        eq(schema.messages.clientId, row.conversation.id),
         eq(schema.messages.direction, "inbound"),
         gt(schema.messages.createdAt, new Date(since)),
       ),
@@ -146,7 +147,19 @@ export async function applyReminderReply(clientId: string, message: { body: stri
   const pending = await db
     .select()
     .from(schema.appointments)
-    .where(and(eq(schema.appointments.clientId, clientId), inArray(schema.appointments.status, ["reminder_sent", "followup_sent"])))
+    .where(
+      and(
+        // The reply comes from the number, so it covers everyone on it.
+        inArray(
+          schema.appointments.clientId,
+          db
+            .select({ id: schema.clients.id })
+            .from(schema.clients)
+            .where(or(eq(schema.clients.id, clientId), eq(schema.clients.holderId, clientId))),
+        ),
+        inArray(schema.appointments.status, ["reminder_sent", "followup_sent"]),
+      ),
+    )
     .orderBy(schema.appointments.startsAt);
   const target = targetId ? pending.find((a) => a.id === targetId) : pending[0];
   if (!target) return null;
@@ -168,17 +181,23 @@ type TemplateBody = Extract<(typeof TEMPLATES)[number]["components"][number], { 
 
 type Loaded = NonNullable<Awaited<ReturnType<typeof load>>>;
 
+// The appointment's patient, and the conversation it is reminded on: the
+// patient's own, or the holder's when they share a number.
+const holders = aliasedTable(schema.clients, "holder");
+
 async function load(appointmentId: string) {
   const [row] = await db
     .select({
       appointment: schema.appointments,
       business: schema.businesses,
       client: schema.clients,
+      conversation: holders,
       practitionerName: schema.practitioners.displayName,
     })
     .from(schema.appointments)
     .innerJoin(schema.businesses, eq(schema.businesses.id, schema.appointments.businessId))
     .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+    .innerJoin(holders, eq(holders.id, sql`coalesce(${schema.clients.holderId}, ${schema.clients.id})`))
     .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
     .where(eq(schema.appointments.id, appointmentId));
   return row ?? null;
@@ -219,7 +238,7 @@ async function deliver(row: Loaded, kind: Kind, now: Date, buttonPayloads: strin
   const used = bodyComponent.example.body_text_named_params.map((p) => p.param_name);
   const params = Object.fromEntries(used.map((k) => [k, all[k]]));
 
-  const kapsoMessageId = await sendTemplate(row.business.phoneNumberId!, row.client.waPhone, {
+  const kapsoMessageId = await sendTemplate(row.business.phoneNumberId!, row.conversation.waPhone!, {
     name,
     language: TEMPLATE_LANGUAGE,
     params,
@@ -227,7 +246,7 @@ async function deliver(row: Loaded, kind: Kind, now: Date, buttonPayloads: strin
   });
   await db.insert(schema.messages).values({
     businessId: row.business.id,
-    clientId: row.client.id,
+    clientId: row.conversation.id,
     direction: "outbound",
     kapsoMessageId,
     type: "template",

@@ -17,7 +17,11 @@ import { listIntakeFields } from "@/lib/dashboard/settings";
 import { saveClinicalAction, saveDemographicsAction, setAgentPausedAction, staffReplyAction } from "../../actions";
 import { startNoteAction } from "../../notes-actions";
 
-const savedLabel: Record<string, string> = { datos: "Datos guardados.", clinico: "Datos clínicos guardados." };
+const savedLabel: Record<string, string> = {
+  datos: "Datos guardados.",
+  clinico: "Datos clínicos guardados.",
+  nuevo: "Paciente registrado.",
+};
 
 export default async function ClientPage({ params, searchParams }: PageProps<"/app/[businessId]/clients/[clientId]">) {
   const { businessId, clientId } = await params;
@@ -33,7 +37,8 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   if (!detail) notFound();
   await logChartView(membership, clientId);
   const [access, notes] = clinical ? await Promise.all([recentAccess(business.id, clientId), listNotes(membership, clientId)]) : [[], []];
-  const { client, appointments, messages } = detail;
+  const { client, conversation, others, appointments, messages } = detail;
+  const shared = conversation.id !== client.id;
   const tz = business.timezone;
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "Algo salió mal." : null;
   const recordError = typeof sp.recordError === "string" ? settingsErrorLabel[sp.recordError] ?? "Algo salió mal." : null;
@@ -59,19 +64,34 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         <div>
           <h2 className="text-xl font-semibold">{client.name ?? "Sin nombre"}</h2>
           <p className="text-sm text-neutral-500">{formatPhone(client.waPhone)}</p>
-        </div>
-        <form action={setAgentPausedAction.bind(null, business.id, client.id, !client.agentPaused)}>
-          {client.agentPaused ? (
-            <div className="flex flex-col items-end gap-1">
-              <span className="text-sm text-amber-700 dark:text-amber-300">El asistente está en pausa con este paciente.</span>
-              <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
-                Reactivar asistente
-              </button>
-            </div>
-          ) : (
-            <button className="rounded-md border px-3 py-1.5 text-sm">Pausar asistente</button>
+          {others.length > 0 && (
+            <p className="mt-1 text-sm text-neutral-500">
+              Comparte WhatsApp con{" "}
+              {others.map((o, i) => (
+                <span key={o.id}>
+                  {i > 0 && ", "}
+                  <Link href={`/app/${business.id}/clients/${o.id}`} className="underline">
+                    {o.name ?? "Sin nombre"}
+                  </Link>
+                </span>
+              ))}
+            </p>
           )}
-        </form>
+        </div>
+        {conversation.waPhone && (
+          <form action={setAgentPausedAction.bind(null, business.id, client.id, !conversation.agentPaused)}>
+            {conversation.agentPaused ? (
+              <div className="flex flex-col items-end gap-1">
+                <span className="text-sm text-amber-700 dark:text-amber-300">El asistente está en pausa con este número.</span>
+                <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
+                  Reactivar asistente
+                </button>
+              </div>
+            ) : (
+              <button className="rounded-md border px-3 py-1.5 text-sm">Pausar asistente</button>
+            )}
+          </form>
+        )}
       </header>
 
       {recordError && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{recordError}</p>}
@@ -229,7 +249,9 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
       </div>
 
       <section id="conversation" className="rounded-md border p-4">
-        <h3 className="mb-3 font-medium">Conversación</h3>
+        <h3 className="mb-3 font-medium">
+          Conversación{shared && <span className="font-normal text-neutral-500"> · con {conversation.name ?? formatPhone(conversation.waPhone)}</span>}
+        </h3>
         <ol className="flex max-h-[32rem] flex-col gap-2 overflow-y-auto">
           {messages.map((m) => (
             <li
@@ -249,17 +271,21 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           ))}
           {messages.length === 0 && <li className="text-sm text-neutral-500">Sin mensajes.</li>}
         </ol>
-        <form action={staffReplyAction.bind(null, business.id, client.id)} className="mt-4 flex flex-col gap-2">
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          {sp.sent && <p className="text-sm text-emerald-700">Mensaje enviado. El asistente quedó en pausa.</p>}
-          <textarea name="text" rows={2} required placeholder="Responder como el consultorio" className="rounded-md border px-3 py-2 text-sm" />
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-neutral-500">Al responder, el asistente se pausa con este paciente.</p>
-            <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
-              Enviar por WhatsApp
-            </button>
-          </div>
-        </form>
+        {conversation.waPhone ? (
+          <form action={staffReplyAction.bind(null, business.id, client.id)} className="mt-4 flex flex-col gap-2">
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            {sp.sent && <p className="text-sm text-emerald-700">Mensaje enviado. El asistente quedó en pausa.</p>}
+            <textarea name="text" rows={2} required placeholder="Responder como el consultorio" className="rounded-md border px-3 py-2 text-sm" />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-neutral-500">Al responder, el asistente se pausa con este número.</p>
+              <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
+                Enviar por WhatsApp
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="mt-4 text-xs text-neutral-500">Este paciente no tiene WhatsApp registrado, así que no recibe mensajes ni recordatorios.</p>
+        )}
       </section>
 
       {clinical && (

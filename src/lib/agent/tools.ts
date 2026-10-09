@@ -12,6 +12,7 @@ import {
   upcomingAppointments,
 } from "@/lib/booking/service";
 import { listPractitioners } from "@/lib/booking/practitioners";
+import { addToNumber } from "@/lib/household";
 import { type Business, type Client, type IntakeField, missingIntake, reloadClient } from "./context";
 
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> };
@@ -24,20 +25,31 @@ const obj = (properties: Record<string, unknown>, required = Object.keys(propert
 });
 const localDateTime = { type: "string", description: "Local time, YYYY-MM-DDTHH:mm" };
 const practitionerId = (description: string) => ({ type: ["string", "null"], description });
+const patientId = {
+  type: ["string", "null"],
+  description: "The patient's id from 'Patients on this WhatsApp number', or null for the person writing",
+};
 
 export const TOOLS: Tool[] = [
   {
     name: "save_client_info",
     description:
-      "Save the client's name and/or answers to the business's intake questions. Call it as soon as the client gives any of them.",
+      "Save a patient's name and/or answers to the clinic's intake questions. Call it as soon as they are given.",
     input_schema: obj({
-      name: { type: ["string", "null"], description: "Client's full name, or null if not given now" },
+      patient_id: patientId,
+      name: { type: ["string", "null"], description: "Patient's full name, or null if not given now" },
       answers: {
         type: "array",
         description: "Answers to intake questions, by question key",
         items: obj({ key: { type: "string" }, value: { type: "string" } }),
       },
     }),
+  },
+  {
+    name: "add_patient",
+    description:
+      "Register another patient who uses this WhatsApp number (e.g. the writer's child or parent), when the appointment is for someone not yet listed. Returns their patient_id.",
+    input_schema: obj({ name: { type: "string", description: "The patient's full name" } }),
   },
   {
     name: "list_services",
@@ -63,8 +75,9 @@ export const TOOLS: Tool[] = [
   {
     name: "book_appointment",
     description:
-      "Book the client into a free slot returned by find_available_slots. Only after the client confirmed the service, day and time.",
+      "Book a patient into a free slot returned by find_available_slots. Only after the person confirmed who it is for, the service, day and time.",
     input_schema: obj({
+      patient_id: patientId,
       service_id: { type: "string" },
       start: localDateTime,
       practitioner_id: practitionerId("The doctor of the chosen slot, or null for any free doctor who offers the service"),
@@ -72,18 +85,18 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "list_my_appointments",
-    description: "List this client's upcoming appointments.",
+    description: "List the upcoming appointments of every patient on this WhatsApp number.",
     input_schema: obj({}),
   },
   {
     name: "cancel_appointment",
-    description: "Cancel one of this client's upcoming appointments, after the client confirmed.",
+    description: "Cancel one of the upcoming appointments of a patient on this number, after the person confirmed.",
     input_schema: obj({ appointment_id: { type: "string" } }),
   },
   {
     name: "reschedule_appointment",
     description:
-      "Move one of this client's upcoming appointments to a new free slot of the same service. If the new time is taken, the original appointment is kept.",
+      "Move an upcoming appointment of a patient on this number to a new free slot of the same service. If the new time is taken, the original appointment is kept.",
     input_schema: obj({
       appointment_id: { type: "string" },
       new_start: localDateTime,
@@ -104,14 +117,18 @@ export const CHAT_TOOLS: ChatTool[] = TOOLS.map((t) => ({
   function: { name: t.name, description: t.description, parameters: t.input_schema },
 }));
 
-export type ToolContext = { business: Business; client: Client; fields: IntakeField[]; now: Date };
+// client is the number's holder, who is writing; household is everyone on
+// the number, holder first.
+export type ToolContext = { business: Business; client: Client; household: Client[]; fields: IntakeField[]; now: Date };
 export type ToolOutcome = { result: unknown; isError?: boolean; handoff?: boolean };
 
 const inputs = {
   save_client_info: z.object({
+    patient_id: z.string().nullish(),
     name: z.string().nullable(),
     answers: z.array(z.object({ key: z.string(), value: z.string() })),
   }),
+  add_patient: z.object({ name: z.string() }),
   list_services: z.object({}),
   list_practitioners: z.object({}),
   find_available_slots: z.object({
@@ -120,7 +137,12 @@ const inputs = {
     date_to: z.string(),
     practitioner_id: z.string().nullish(),
   }),
-  book_appointment: z.object({ service_id: z.string(), start: z.string(), practitioner_id: z.string().nullish() }),
+  book_appointment: z.object({
+    patient_id: z.string().nullish(),
+    service_id: z.string(),
+    start: z.string(),
+    practitioner_id: z.string().nullish(),
+  }),
   list_my_appointments: z.object({}),
   cancel_appointment: z.object({ appointment_id: z.string() }),
   reschedule_appointment: z.object({
@@ -139,8 +161,20 @@ const bookingErrors = {
   unknown_practitioner: "That doctor does not exist or does not offer this service. Call list_practitioners.",
   invalid_time: "Time must be local YYYY-MM-DDTHH:mm.",
   slot_unavailable: "That time is not available (taken or outside opening hours). Call find_available_slots again.",
-  not_found: "That appointment is not one of this client's upcoming appointments.",
+  not_found: "That appointment is not an upcoming appointment of a patient on this number.",
 } as const;
+
+const UNKNOWN_PATIENT = "That patient_id is not on this number. Use one from 'Patients on this WhatsApp number', or add_patient.";
+
+function patientIn(ctx: ToolContext, id: string | null | undefined) {
+  if (!id) return ctx.household[0] ?? ctx.client;
+  return ctx.household.find((p) => p.id === id) ?? null;
+}
+
+function remember(ctx: ToolContext, patient: Client) {
+  ctx.household = ctx.household.map((p) => (p.id === patient.id ? patient : p));
+  if (patient.id === ctx.client.id) ctx.client = patient;
+}
 
 export async function runTool(name: string, rawInput: unknown, ctx: ToolContext): Promise<ToolOutcome> {
   if (!(name in inputs)) return { result: `Unknown tool ${name}`, isError: true };
@@ -152,7 +186,9 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   switch (name) {
     case "save_client_info": {
       const input = inputs.save_client_info.parse(rawInput);
-      const data = { ...ctx.client.data };
+      const patient = patientIn(ctx, input.patient_id);
+      if (!patient) return { result: UNKNOWN_PATIENT, isError: true };
+      const data = { ...patient.data };
       const rejected: string[] = [];
       for (const { key, value } of input.answers) {
         const field = ctx.fields.find((f) => f.key === key);
@@ -170,15 +206,27 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         .set({
           data,
           ...(input.name?.trim() ? { name: input.name.trim() } : {}),
-          ...(birth && !ctx.client.dateOfBirth ? { dateOfBirth: birth } : {}),
+          ...(birth && !patient.dateOfBirth ? { dateOfBirth: birth } : {}),
         })
-        .where(eq(schema.clients.id, ctx.client.id))
+        .where(eq(schema.clients.id, patient.id))
         .returning();
-      ctx.client = client;
+      remember(ctx, client);
       return {
-        result: { saved: true, rejected, still_missing: missingIntake(client, ctx.fields) },
+        result: { saved: true, patient_id: client.id, rejected, still_missing: missingIntake(client, ctx.fields) },
         isError: rejected.length > 0,
       };
+    }
+
+    case "add_patient": {
+      const input = inputs.add_patient.parse(rawInput);
+      const name = input.name.trim();
+      if (!name) return { result: "Give the patient's full name.", isError: true };
+      const holder = ctx.client;
+      const existing = ctx.household.find((p) => p.name?.trim().toLowerCase() === name.toLowerCase());
+      if (existing) return { result: { patient_id: existing.id, already_registered: true } };
+      const patient = await addToNumber(business.id, holder, { name });
+      ctx.household = [...ctx.household, patient];
+      return { result: { patient_id: patient.id, still_missing: missingIntake(patient, ctx.fields) } };
     }
 
     case "list_services": {
@@ -237,7 +285,9 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
 
     case "book_appointment": {
       const input = inputs.book_appointment.parse(rawInput);
-      const fresh = (await reloadClient(business.id, ctx.client.id)) ?? ctx.client;
+      const patient = patientIn(ctx, input.patient_id);
+      if (!patient) return { result: UNKNOWN_PATIENT, isError: true };
+      const fresh = (await reloadClient(business.id, patient.id)) ?? patient;
       const missing = missingIntake(fresh, ctx.fields);
       if (missing.length)
         return { result: `Collect these first: ${missing.join(", ")}`, isError: true };
@@ -254,15 +304,22 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       });
       if (!booked.ok) return { result: bookingErrors[booked.reason], isError: true };
       return {
-        result: { booked: true, appointment_id: booked.appointment.id, ...describeSlot(booked.appointment.startsAt, tz) },
+        result: {
+          booked: true,
+          appointment_id: booked.appointment.id,
+          patient: fresh.name,
+          ...describeSlot(booked.appointment.startsAt, tz),
+        },
       };
     }
 
     case "list_my_appointments": {
-      const rows = await upcomingAppointments(business.id, ctx.client.id, now);
+      const rows = await upcomingAppointments(business.id, ctx.household.map((p) => p.id), now);
       return {
         result: rows.map((r) => ({
           appointment_id: r.appointment.id,
+          patient_id: r.appointment.clientId,
+          patient: ctx.household.find((p) => p.id === r.appointment.clientId)?.name ?? null,
           service: r.serviceName,
           practitioner: r.practitionerName,
           status: r.appointment.status,
@@ -274,7 +331,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
     case "cancel_appointment": {
       const input = inputs.cancel_appointment.parse(rawInput);
       if (!isUuid(input.appointment_id)) return { result: bookingErrors.not_found, isError: true };
-      const cancelled = await cancelByClient(business.id, ctx.client.id, input.appointment_id);
+      const cancelled = await cancelByClient(business.id, ctx.household.map((p) => p.id), input.appointment_id);
       if (!cancelled) return { result: bookingErrors.not_found, isError: true };
       return { result: { cancelled: true } };
     }
@@ -286,7 +343,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         return { result: bookingErrors.unknown_practitioner, isError: true };
       const moved = await rescheduleByClient({
         business,
-        clientId: ctx.client.id,
+        clientIds: ctx.household.map((p) => p.id),
         appointmentId: input.appointment_id,
         localStart: input.new_start,
         practitionerId: input.practitioner_id,

@@ -74,14 +74,17 @@ export const settingsErrorLabel: Record<string, string> = {
   not_connected: "El WhatsApp del consultorio no está conectado.",
   send_failed: "No se pudo enviar el mensaje.",
   empty: "Escribe un mensaje.",
+  no_whatsapp: "Este paciente no tiene WhatsApp registrado.",
+  invalid_phone: "El número no es válido. Escribe 8 dígitos o el número con código de país.",
+  name_required_patient: "Escribe el nombre del paciente.",
 };
 
 export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MMM, HH:mm") {
   return formatInTimeZone(instant, timezone, pattern, { locale: es });
 }
 
-export function formatPhone(waPhone: string) {
-  return `+${waPhone}`;
+export function formatPhone(waPhone: string | null) {
+  return waPhone ? `+${waPhone}` : "Sin WhatsApp";
 }
 
 export const accessActionLabel = {

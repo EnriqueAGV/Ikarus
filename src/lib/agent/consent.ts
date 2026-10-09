@@ -76,7 +76,7 @@ export async function ensureConsent(business: Business, client: Client): Promise
   }
 
   const body = consentRequest(business);
-  const kapsoMessageId = await sendButtons(business.phoneNumberId!, client.waPhone, body, [
+  const kapsoMessageId = await sendButtons(business.phoneNumberId!, client.waPhone!, body, [
     { id: CONSENT_PAYLOAD, title: "Acepto" },
   ]);
   await db.insert(schema.messages).values({

@@ -3,6 +3,7 @@ import { db, schema } from "@/db";
 import { env } from "@/lib/env";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { upcomingAppointments } from "@/lib/booking/service";
+import { household as loadHousehold } from "@/lib/household";
 import { sendText } from "@/lib/kapso/client";
 import { loadIntakeFields, missingIntake, reloadClient, type Business, type Client } from "./context";
 import { ensureConsent } from "./consent";
@@ -39,7 +40,8 @@ export async function runAgent(input: {
     .from(schema.businesses)
     .where(eq(schema.businesses.id, input.businessId));
   const client = await reloadClient(input.businessId, input.clientId);
-  if (!business?.phoneNumberId || !client) return { status: "skipped", reason: "not_found" };
+  // Runs on the number's holder, who has the conversation.
+  if (!business?.phoneNumberId || !client?.waPhone || client.holderId) return { status: "skipped", reason: "not_found" };
   // Checked before the pause: a patient already handed to the team still
   // gets pointed to 911.
   const emergency = await answerEmergency(business, client, now);
@@ -62,9 +64,10 @@ export async function runAgent(input: {
   if (history.at(-1)?.direction !== "inbound") return { status: "skipped", reason: "already_answered" };
 
   const fields = await loadIntakeFields(business.id);
-  const upcoming = await upcomingAppointments(business.id, client.id, now);
+  const household = await loadHousehold(business.id, client.id);
+  const upcoming = await upcomingAppointments(business.id, household.map((p) => p.id), now);
   const practitioners = await listPractitioners(business.id, { activeOnly: true });
-  const ctx: ToolContext = { business, client, fields, now };
+  const ctx: ToolContext = { business, client, household, fields, now };
 
   // The stable instructions come first so endpoints with prompt caching can reuse them.
   const system = [
@@ -72,9 +75,10 @@ export async function runAgent(input: {
     turnContext({
       business,
       client,
-      missing: missingIntake(client, fields),
+      patients: household.map((p) => ({ patient: p, missing: missingIntake(p, fields) })),
       upcoming: upcoming.map((u) => ({
         id: u.appointment.id,
+        patientName: household.find((p) => p.id === u.appointment.clientId)?.name ?? null,
         serviceName: u.serviceName,
         practitionerName: u.practitionerName,
         startsAt: u.appointment.startsAt,
@@ -139,7 +143,7 @@ async function answerEmergency(business: Business, client: Client, now: Date): P
   if (lastEmergencyReply && now.getTime() - lastEmergencyReply.createdAt.getTime() < EMERGENCY_REPEAT_MS) {
     return { status: "emergency", replied: false };
   }
-  const kapsoMessageId = await sendText(business.phoneNumberId!, client.waPhone, EMERGENCY_REPLY);
+  const kapsoMessageId = await sendText(business.phoneNumberId!, client.waPhone!, EMERGENCY_REPLY);
   await db.insert(schema.messages).values({
     businessId: business.id,
     clientId: client.id,

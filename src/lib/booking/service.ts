@@ -6,6 +6,7 @@ import { db, schema } from "@/db";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { findSlots, fromLocalString, toLocalString } from "./availability";
+import { conversationId } from "@/lib/household";
 import { practitionersOffering } from "./practitioners";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -190,7 +191,8 @@ async function bookInTx(tx: Tx, input: BookInput, rescheduledFromId?: string): P
   }
 }
 
-export async function upcomingAppointments(businessId: string, clientId: string, now = new Date()) {
+// Upcoming appointments of one patient, or of everyone on a WhatsApp number.
+export async function upcomingAppointments(businessId: string, clientIds: string | string[], now = new Date()) {
   return db
     .select({
       appointment: schema.appointments,
@@ -203,7 +205,7 @@ export async function upcomingAppointments(businessId: string, clientId: string,
     .where(
       and(
         eq(schema.appointments.businessId, businessId),
-        eq(schema.appointments.clientId, clientId),
+        inArray(schema.appointments.clientId, [clientIds].flat()),
         inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
         gte(schema.appointments.startsAt, now),
       ),
@@ -211,7 +213,7 @@ export async function upcomingAppointments(businessId: string, clientId: string,
     .orderBy(asc(schema.appointments.startsAt));
 }
 
-async function liveAppointmentOf(tx: Tx, businessId: string, clientId: string, appointmentId: string) {
+async function liveAppointmentOf(tx: Tx, businessId: string, clientIds: string[], appointmentId: string) {
   const [row] = await tx
     .select()
     .from(schema.appointments)
@@ -219,7 +221,7 @@ async function liveAppointmentOf(tx: Tx, businessId: string, clientId: string, a
       and(
         eq(schema.appointments.id, appointmentId),
         eq(schema.appointments.businessId, businessId),
-        eq(schema.appointments.clientId, clientId),
+        inArray(schema.appointments.clientId, clientIds),
         inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
       ),
     )
@@ -227,9 +229,10 @@ async function liveAppointmentOf(tx: Tx, businessId: string, clientId: string, a
   return row ?? null;
 }
 
-export async function cancelByClient(businessId: string, clientId: string, appointmentId: string) {
+// clientIds: the patients the person writing may act for (everyone on their number).
+export async function cancelByClient(businessId: string, clientIds: string | string[], appointmentId: string) {
   const cancelled = await db.transaction(async (tx) => {
-    const appt = await liveAppointmentOf(tx, businessId, clientId, appointmentId);
+    const appt = await liveAppointmentOf(tx, businessId, [clientIds].flat(), appointmentId);
     if (!appt) return null;
     const [row] = await tx
       .update(schema.appointments)
@@ -247,7 +250,8 @@ export async function cancelByClient(businessId: string, clientId: string, appoi
 // stays the same unless another one is given.
 export async function rescheduleByClient(input: {
   business: Business;
-  clientId: string;
+  // The patients the person writing may act for (everyone on their number).
+  clientIds: string | string[];
   appointmentId: string;
   localStart: string;
   practitionerId?: string | null;
@@ -257,7 +261,7 @@ export async function rescheduleByClient(input: {
   let result: BookResult;
   try {
     result = await db.transaction(async (tx) => {
-      old = await liveAppointmentOf(tx, input.business.id, input.clientId, input.appointmentId);
+      old = await liveAppointmentOf(tx, input.business.id, [input.clientIds].flat(), input.appointmentId);
       if (!old) return { ok: false, reason: "not_found" } as const;
       await tx
         .update(schema.appointments)
@@ -265,7 +269,7 @@ export async function rescheduleByClient(input: {
         .where(eq(schema.appointments.id, old.id));
       const booked = await bookInTx(
         tx,
-        { ...input, serviceId: old.serviceId, practitionerId: input.practitionerId || old.practitionerId },
+        { ...input, clientId: old.clientId, serviceId: old.serviceId, practitionerId: input.practitionerId || old.practitionerId },
         old.id,
       );
       if (!booked.ok) throw new KeepOriginal(booked);
@@ -299,7 +303,14 @@ export function describeSlot(instant: Date, timezone: string) {
 
 async function emit(name: "appointment/booked" | "appointment/cancelled", a: Appointment) {
   try {
-    await inngest.send({ name, data: { appointmentId: a.id, businessId: a.businessId, clientId: a.clientId } });
+    // clientId is the conversation's, so the patient's replies (from the
+    // number's holder) reach the reminder flow of anyone on the number.
+    const [patient] = await db
+      .select({ id: schema.clients.id, holderId: schema.clients.holderId })
+      .from(schema.clients)
+      .where(eq(schema.clients.id, a.clientId));
+    const clientId = patient ? conversationId(patient) : a.clientId;
+    await inngest.send({ name, data: { appointmentId: a.id, businessId: a.businessId, clientId } });
   } catch (err) {
     // Reminders are scheduled from these events; a failed send must not undo a booking.
     console.error(`inngest.send ${name} failed`, err);

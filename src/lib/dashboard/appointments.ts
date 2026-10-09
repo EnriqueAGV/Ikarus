@@ -4,6 +4,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { db, schema } from "@/db";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import { inngest } from "@/inngest/client";
+import { conversationId, household } from "@/lib/household";
 
 type AppointmentStatus = (typeof schema.appointmentStatus.enumValues)[number];
 
@@ -159,13 +160,16 @@ export async function listClients(businessId: string, query?: string) {
     .limit(200);
 }
 
+// A patient with their appointments, and the WhatsApp conversation of their
+// number, which belongs to the number's holder when they share it.
 export async function getClientDetail(businessId: string, clientId: string) {
   const [client] = await db
     .select()
     .from(schema.clients)
     .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
   if (!client) return null;
-  const [appointments, messages] = await Promise.all([
+  const holderId = conversationId(client);
+  const [appointments, messages, sharing] = await Promise.all([
     db
       .select({ appointment: schema.appointments, serviceName: schema.services.name })
       .from(schema.appointments)
@@ -175,16 +179,30 @@ export async function getClientDetail(businessId: string, clientId: string) {
     db
       .select()
       .from(schema.messages)
-      .where(eq(schema.messages.clientId, client.id))
+      .where(eq(schema.messages.clientId, holderId))
       .orderBy(desc(schema.messages.createdAt))
       .limit(50),
+    client.waPhone ? household(businessId, holderId) : Promise.resolve([client]),
   ]);
-  return { client, appointments, messages: messages.reverse() };
+  const conversation = sharing.find((p) => p.id === holderId) ?? client;
+  return {
+    client,
+    conversation,
+    others: sharing.filter((p) => p.id !== client.id),
+    appointments,
+    messages: messages.reverse(),
+  };
 }
 
+// The pause is on the number's conversation, so it covers everyone sharing it.
 export async function setAgentPaused(businessId: string, clientId: string, paused: boolean) {
+  const [client] = await db
+    .select({ id: schema.clients.id, holderId: schema.clients.holderId })
+    .from(schema.clients)
+    .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
+  if (!client) return;
   await db
     .update(schema.clients)
     .set({ agentPaused: paused })
-    .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
+    .where(and(eq(schema.clients.id, conversationId(client)), eq(schema.clients.businessId, businessId)));
 }
