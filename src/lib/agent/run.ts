@@ -125,6 +125,31 @@ export async function runAgent(input: {
   return { status: "replied", reply: text };
 }
 
+// When the agent can't answer at all: the holding reply, if the patient's
+// last message is still unanswered, and the conversation goes to the team.
+export async function apologizeAndHandOff(businessId: string, clientId: string) {
+  const [business] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, businessId));
+  const client = await reloadClient(businessId, clientId);
+  if (!business?.phoneNumberId || !client?.waPhone) return;
+  await db.update(schema.clients).set({ agentPaused: true }).where(eq(schema.clients.id, client.id));
+  const [last] = await db
+    .select({ direction: schema.messages.direction })
+    .from(schema.messages)
+    .where(eq(schema.messages.clientId, client.id))
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(1);
+  if (last?.direction !== "inbound") return;
+  const kapsoMessageId = await sendText(business.phoneNumberId, client.waPhone, FALLBACK_REPLY);
+  await db.insert(schema.messages).values({
+    businessId: business.id,
+    clientId: client.id,
+    direction: "outbound",
+    kapsoMessageId,
+    type: "text",
+    body: FALLBACK_REPLY,
+  });
+}
+
 type StoredMessage = typeof schema.messages.$inferSelect;
 
 // Shows "escribiendo…" while the agent works. WhatsApp drops it after 25

@@ -1,4 +1,4 @@
-import { runAgent } from "@/lib/agent/run";
+import { apologizeAndHandOff, runAgent } from "@/lib/agent/run";
 import { clientRepliedSince, endUnanswered, planReminder, REPLY_WAIT, sendReminder } from "@/lib/reminders";
 import { inngest } from "./client";
 
@@ -10,6 +10,13 @@ export const agentReply = inngest.createFunction(
     triggers: [{ event: "whatsapp/message.received" }],
     concurrency: { key: "event.data.clientId", limit: 1 },
     retries: 2,
+    // Out of retries (the LLM or WhatsApp kept failing): the patient still
+    // hears back, and the team takes the conversation.
+    onFailure: async ({ event, error }) => {
+      const { businessId, clientId } = event.data.event.data as { businessId: string; clientId: string };
+      console.error("agent reply failed", { businessId, clientId, error: error.message });
+      await apologizeAndHandOff(businessId, clientId);
+    },
   },
   async ({ event, step }) => {
     const { businessId, clientId } = event.data as { businessId: string; clientId: string };

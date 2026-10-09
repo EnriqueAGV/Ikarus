@@ -8,12 +8,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type Business = typeof schema.businesses.$inferSelect;
 
-// What the agent asks a new patient besides their name. Nothing clinical
-// beyond a few words of reason; the practice can edit these in Ajustes.
+// What the agent asks a new patient besides their name. Nothing clinical;
+// the practice can edit these in Ajustes.
 export const DEFAULT_INTAKE = [
   { key: "fecha_nacimiento", label: "Fecha de nacimiento", type: "date" as const, options: null },
   { key: "tipo_visita", label: "¿Primera vez o seguimiento?", type: "choice" as const, options: ["Primera vez", "Seguimiento"] },
-  { key: "motivo", label: "Motivo de la consulta (en pocas palabras)", type: "text" as const, options: null },
 ];
 
 // Super-admin creates a business: our row, its Kapso customer, the owner's
