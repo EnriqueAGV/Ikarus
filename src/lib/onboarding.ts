@@ -39,7 +39,8 @@ export async function createBusiness(input: {
 
 // Returns the profile id for this email, creating the account if needed. A new
 // account gets Supabase's invitation email, whose link signs them in and opens
-// their dashboard (see /auth/invite); after that they use magic links.
+// the create-password screen (see /auth/invite); after that they sign in
+// with email and password.
 export async function ensureUser(email: string, fullName?: string): Promise<{ id: string; invited: boolean }> {
   const normalized = email.trim().toLowerCase();
   const [existing] = await db

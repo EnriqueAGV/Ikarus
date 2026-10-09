@@ -23,7 +23,7 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
           <span>
             {sp.emailed
-              ? `Listo. Enviamos una invitación a ${sp.invited}; el enlace del correo abre su panel. Después puede entrar en ${loginUrl}.`
+              ? `Listo. Enviamos una invitación a ${sp.invited}; con el enlace del correo crea su contraseña. Después entra en ${loginUrl}.`
               : `Listo. ${sp.invited} puede entrar en ${loginUrl} con ese correo.`}
           </span>
           <CopyButton text={loginUrl} />

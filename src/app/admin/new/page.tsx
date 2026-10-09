@@ -46,7 +46,7 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         <Field label="Correo del dueño" name="ownerEmail" type="email" required />
         <Field label="Nombre del dueño (opcional)" name="ownerName" />
         <p className="text-sm text-neutral-500">
-          Se crea la cuenta del dueño y un enlace para conectar su WhatsApp. El dueño entra con su correo en la página de acceso.
+          Se crea la cuenta del dueño y un enlace para conectar su WhatsApp. El dueño recibe un correo para crear su contraseña y entrar a su panel.
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
         <button className="rounded-md bg-black px-3 py-2 text-white dark:bg-white dark:text-black">
