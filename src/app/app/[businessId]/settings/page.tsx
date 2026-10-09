@@ -1,0 +1,254 @@
+import { requireBusinessManager } from "@/lib/auth";
+import { todayIn } from "@/lib/dashboard/appointments";
+import { formatLocal, settingsErrorLabel, weekdayLabel } from "@/lib/dashboard/labels";
+import { getExceptions, getWeeklyRules, listIntakeFields, listServices } from "@/lib/dashboard/settings";
+import {
+  addExceptionAction,
+  createIntakeAction,
+  createServiceAction,
+  deleteIntakeAction,
+  moveIntakeAction,
+  removeExceptionAction,
+  saveGeneralAction,
+  saveHoursAction,
+  updateIntakeAction,
+  updateServiceAction,
+} from "../actions";
+
+const input = "rounded-md border px-2 py-1 text-sm";
+const button = "rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900";
+const primary = "rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900";
+const hhmm = (t: string | null) => t?.slice(0, 5) ?? "";
+// Monday first, as the week view shows it.
+const WEEK = [1, 2, 3, 4, 5, 6, 0];
+const typeLabel = { text: "Texto", date: "Fecha", choice: "Opciones" } as const;
+
+export default async function SettingsPage({ params, searchParams }: PageProps<"/app/[businessId]/settings">) {
+  const { businessId } = await params;
+  const sp = await searchParams;
+  const { business } = await requireBusinessManager(businessId);
+  const id = business.id;
+  const [rules, exceptions, services, fields] = await Promise.all([
+    getWeeklyRules(id),
+    getExceptions(id, todayIn(business.timezone)),
+    listServices(id),
+    listIntakeFields(id),
+  ]);
+  const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "No se pudo guardar." : null;
+
+  return (
+    <div className="flex max-w-3xl flex-col gap-8">
+      {error && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
+      {sp.saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Cambios guardados.</p>}
+      {(services.filter((s) => s.active).length === 0 || rules.length === 0) && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          El asistente solo puede agendar cuando hay al menos un servicio activo y un horario de atención.
+        </p>
+      )}
+
+      <section id="services" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Servicios</h2>
+        <ul className="flex flex-col gap-2">
+          {services.map((s) => (
+            <li key={s.id}>
+              <form action={updateServiceAction.bind(null, id, s.id)} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+                <Field label="Nombre">
+                  <input name="name" defaultValue={s.name} required className={`${input} w-56`} />
+                </Field>
+                <Field label="Duración (min)">
+                  <input name="durationMin" type="number" min={5} max={720} defaultValue={s.durationMin} className={`${input} w-24`} />
+                </Field>
+                <Field label="Margen después (min)">
+                  <input name="bufferMin" type="number" min={0} max={240} defaultValue={s.bufferMin} className={`${input} w-24`} />
+                </Field>
+                <label className="flex items-center gap-1 pb-1.5 text-sm">
+                  <input type="checkbox" name="active" defaultChecked={s.active} /> Activo
+                </label>
+                <button className={button}>Guardar</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form action={createServiceAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+          <Field label="Nuevo servicio">
+            <input name="name" required placeholder="Corte de cabello" className={`${input} w-56`} />
+          </Field>
+          <Field label="Duración (min)">
+            <input name="durationMin" type="number" min={5} max={720} defaultValue={60} className={`${input} w-24`} />
+          </Field>
+          <Field label="Margen después (min)">
+            <input name="bufferMin" type="number" min={0} max={240} defaultValue={0} className={`${input} w-24`} />
+          </Field>
+          <button className={primary}>Agregar</button>
+        </form>
+      </section>
+
+      <section id="hours" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Horario de atención</h2>
+        <p className="text-sm text-neutral-500">
+          Hora local ({business.timezone}). Usa el segundo horario para días con pausa, por ejemplo 9:00–14:00 y 16:00–19:00.
+        </p>
+        <form action={saveHoursAction.bind(null, id)} className="flex flex-col gap-2 rounded-md border p-3">
+          {WEEK.map((d) => {
+            const day = rules.filter((r) => r.weekday === d);
+            return (
+              <div key={d} className="flex flex-wrap items-center gap-2 text-sm">
+                <label className="flex w-28 items-center gap-2">
+                  <input type="checkbox" name={`d${d}_open`} defaultChecked={day.length > 0} />
+                  {weekdayLabel[d]}
+                </label>
+                {[1, 2].map((n) => (
+                  <span key={n} className="flex items-center gap-1">
+                    <input type="time" name={`d${d}_s${n}`} defaultValue={hhmm(day[n - 1]?.startTime ?? (n === 1 ? "09:00" : null))} className={input} />
+                    –
+                    <input type="time" name={`d${d}_e${n}`} defaultValue={hhmm(day[n - 1]?.endTime ?? (n === 1 ? "18:00" : null))} className={input} />
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+          <div>
+            <button className={primary}>Guardar horario</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="exceptions" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Días especiales</h2>
+        <p className="text-sm text-neutral-500">Días cerrados o con otro horario. Reemplazan el horario semanal ese día.</p>
+        {exceptions.length > 0 && (
+          <ul className="divide-y rounded-md border text-sm">
+            {exceptions.map((e) => (
+              <li key={e.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                <span>
+                  <span className="capitalize">{formatLocal(new Date(`${e.date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM yyyy")}</span>
+                  {" · "}
+                  {e.startTime ? `${hhmm(e.startTime)}–${hhmm(e.endTime)}` : "Cerrado"}
+                  {e.note ? ` · ${e.note}` : ""}
+                </span>
+                <form action={removeExceptionAction.bind(null, id, e.id)}>
+                  <button className="text-xs text-neutral-500 hover:underline">Quitar</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <form action={addExceptionAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+          <Field label="Fecha">
+            <input type="date" name="date" required className={input} />
+          </Field>
+          <label className="flex items-center gap-1 pb-1.5 text-sm">
+            <input type="checkbox" name="closed" defaultChecked /> Cerrado
+          </label>
+          <Field label="o abre de">
+            <span className="flex items-center gap-1">
+              <input type="time" name="startTime" className={input} />–<input type="time" name="endTime" className={input} />
+            </span>
+          </Field>
+          <Field label="Nota">
+            <input name="note" placeholder="Día festivo" className={`${input} w-40`} />
+          </Field>
+          <button className={primary}>Agregar</button>
+        </form>
+      </section>
+
+      <section id="intake" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Datos que pide el asistente</h2>
+        <p className="text-sm text-neutral-500">
+          El nombre siempre se pide. El asistente no agenda hasta tener los datos obligatorios.
+        </p>
+        <ul className="flex flex-col gap-2">
+          {fields.map((f, i) => (
+            <li key={f.id} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+              <form action={updateIntakeAction.bind(null, id, f.id)} className="flex flex-wrap items-end gap-2">
+                <IntakeInputs label={f.label} type={f.type} options={f.options ?? []} required={f.required} />
+                <button className={button}>Guardar</button>
+              </form>
+              <div className="flex gap-1">
+                <form action={moveIntakeAction.bind(null, id, f.id, "up")}>
+                  <button disabled={i === 0} className={`${button} disabled:opacity-30`} aria-label="Subir">↑</button>
+                </form>
+                <form action={moveIntakeAction.bind(null, id, f.id, "down")}>
+                  <button disabled={i === fields.length - 1} className={`${button} disabled:opacity-30`} aria-label="Bajar">↓</button>
+                </form>
+                <form action={deleteIntakeAction.bind(null, id, f.id)}>
+                  <button className={`${button} text-red-700 dark:text-red-400`}>Quitar</button>
+                </form>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <form action={createIntakeAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+          <IntakeInputs label="" type="text" options={[]} required />
+          <button className={primary}>Agregar</button>
+        </form>
+      </section>
+
+      <section id="general" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Recordatorios y asistente</h2>
+        <form action={saveGeneralAction.bind(null, id)} className="flex flex-col gap-3 rounded-md border p-3">
+          <Field label="Enviar el recordatorio cuántas horas antes de la cita">
+            <input
+              name="reminderLeadHours"
+              type="number"
+              min={1}
+              max={168}
+              defaultValue={business.reminderLeadHours}
+              className={`${input} w-24`}
+            />
+          </Field>
+          <p className="text-xs text-neutral-500">
+            Si el cliente no responde, se envía un seguimiento a las 2 horas, y la cita se cancela 2 horas después.
+          </p>
+          <Field label="Indicaciones para el asistente (opcional)">
+            <textarea
+              name="agentInstructions"
+              rows={4}
+              maxLength={4000}
+              defaultValue={business.agentInstructions ?? ""}
+              placeholder="Ej.: Estamos en Av. Reforma 123. Pide llegar 10 minutos antes."
+              className={`${input} w-full`}
+            />
+          </Field>
+          <div>
+            <button className={primary}>Guardar</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1 text-xs text-neutral-500">
+      {label}
+      {children}
+    </label>
+  );
+}
+
+function IntakeInputs(f: { label: string; type: "text" | "date" | "choice"; options: string[]; required: boolean }) {
+  return (
+    <>
+      <Field label="Pregunta">
+        <input name="label" defaultValue={f.label} required placeholder="Fecha de nacimiento" className={`${input} w-56`} />
+      </Field>
+      <Field label="Tipo">
+        <select name="type" defaultValue={f.type} className={input}>
+          {(["text", "date", "choice"] as const).map((t) => (
+            <option key={t} value={t}>
+              {typeLabel[t]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Opciones (separadas por coma)">
+        <input name="options" defaultValue={f.options.join(", ")} placeholder="Sí, No" className={`${input} w-44`} />
+      </Field>
+      <label className="flex items-center gap-1 pb-1.5 text-sm">
+        <input type="checkbox" name="required" defaultChecked={f.required} /> Obligatorio
+      </label>
+    </>
+  );
+}

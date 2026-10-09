@@ -139,8 +139,12 @@ export function toConversation(history: StoredMessage[]): Anthropic.Beta.BetaMes
     .filter((m) => m.body?.trim())
     .map((m) => ({
       role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const),
-      content: m.body!,
+      content: sentByStaff(m) ? `[Escrito por el equipo del negocio, no por ti]\n${m.body}` : m.body!,
     }));
+}
+
+function sentByStaff(m: StoredMessage) {
+  return typeof m.payload === "object" && m.payload !== null && "sentBy" in m.payload;
 }
 
 function textOf(content: Anthropic.Beta.BetaContentBlock[]) {

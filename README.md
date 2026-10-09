@@ -30,6 +30,15 @@ After the first deploy:
 
 `/admin/new` creates the business, its Kapso customer, the owner's account and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
 
+## The business dashboard
+
+Owners and staff sign in at `/login` and land on `/app/<business>`:
+
+- **Citas**: day, week and upcoming views. Staff can cancel an upcoming appointment (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
+- **Clientes**: everyone who has written, their intake answers, appointments and conversation. When the agent hands a client to the business it pauses for that client; staff can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
+- **Ajustes** (owners): services, weekly hours, closed days, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active service and opening hours.
+- **Equipo** (owners): invite owners or staff by email; they sign in with a magic link.
+
 ## Layout
 
 | Path | What it is |
@@ -42,6 +51,8 @@ After the first deploy:
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |
 | `src/lib/booking/` | Free-slot engine and booking, cancel, reschedule |
 | `src/lib/agent/` | The WhatsApp booking agent (Claude + tools) |
+| `src/lib/dashboard/` | Settings, calendar queries and team management behind the dashboard |
+| `src/app/app/[businessId]/` | Dashboard pages and their server actions |
 | `src/inngest/` | Background work: agent replies, reminder flows |
 
 ## How a client message is answered

@@ -1,0 +1,183 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { z } from "zod";
+import { requireBusinessAccess, requireBusinessManager } from "@/lib/auth";
+import {
+  setAgentPaused,
+  updateAppointmentByBusiness,
+  type BusinessAction,
+} from "@/lib/dashboard/appointments";
+import {
+  addException,
+  createIntakeField,
+  createService,
+  deleteIntakeField,
+  moveIntakeField,
+  removeException,
+  saveWeeklyRules,
+  SettingsError,
+  updateBusinessSettings,
+  updateIntakeField,
+  updateService,
+  type IntakeInput,
+  type WeeklyRule,
+} from "@/lib/dashboard/settings";
+import { inviteMember, removeMember, TeamError } from "@/lib/dashboard/team";
+import { sendStaffReply } from "@/lib/messaging/staff";
+
+const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
+const int = (form: FormData, key: string) => Number.parseInt(str(form, key), 10);
+const checked = (form: FormData, key: string) => form.get(key) === "on";
+
+// Runs a settings change and comes back to the settings page with the outcome.
+async function settingsChange(businessId: string, section: string, change: () => Promise<unknown>) {
+  await requireBusinessManager(businessId);
+  let error: string | null = null;
+  try {
+    await change();
+  } catch (err) {
+    if (!(err instanceof SettingsError)) throw err;
+    error = err.code;
+  }
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}/settings?${error ? `error=${error}` : "saved=1"}#${section}`);
+}
+
+export async function appointmentAction(businessId: string, appointmentId: string, action: BusinessAction) {
+  await requireBusinessAccess(businessId);
+  await updateAppointmentByBusiness(businessId, appointmentId, action);
+  revalidatePath(`/app/${businessId}`, "layout");
+}
+
+export async function setAgentPausedAction(businessId: string, clientId: string, paused: boolean) {
+  await requireBusinessAccess(businessId);
+  await setAgentPaused(businessId, clientId, paused);
+  revalidatePath(`/app/${businessId}`, "layout");
+}
+
+export async function staffReplyAction(businessId: string, clientId: string, form: FormData) {
+  const { business, profile } = await requireBusinessAccess(businessId);
+  let outcome: string;
+  try {
+    const result = await sendStaffReply({ business, clientId, text: str(form, "text"), sentBy: profile.id });
+    outcome = result.ok ? "sent=1" : `error=${result.reason}`;
+  } catch (err) {
+    console.error("staff reply failed", err);
+    outcome = "error=send_failed";
+  }
+  revalidatePath(`/app/${businessId}/clients/${clientId}`);
+  redirect(`/app/${businessId}/clients/${clientId}?${outcome}#conversation`);
+}
+
+export async function saveHoursAction(businessId: string, form: FormData) {
+  const rules: WeeklyRule[] = [];
+  for (let weekday = 0; weekday < 7; weekday++) {
+    if (!checked(form, `d${weekday}_open`)) continue;
+    for (const n of [1, 2]) {
+      const startTime = str(form, `d${weekday}_s${n}`);
+      const endTime = str(form, `d${weekday}_e${n}`);
+      if (startTime || endTime) rules.push({ weekday, startTime, endTime });
+    }
+  }
+  await settingsChange(businessId, "hours", () => saveWeeklyRules(businessId, rules));
+}
+
+export async function addExceptionAction(businessId: string, form: FormData) {
+  const closed = checked(form, "closed");
+  await settingsChange(businessId, "exceptions", () =>
+    addException(businessId, {
+      date: str(form, "date"),
+      range: closed ? null : { startTime: str(form, "startTime"), endTime: str(form, "endTime") },
+      note: str(form, "note"),
+    }),
+  );
+}
+
+export async function removeExceptionAction(businessId: string, exceptionId: string) {
+  await settingsChange(businessId, "exceptions", () => removeException(businessId, exceptionId));
+}
+
+const serviceFrom = (form: FormData) => ({
+  name: str(form, "name"),
+  durationMin: int(form, "durationMin"),
+  bufferMin: int(form, "bufferMin") || 0,
+  active: checked(form, "active"),
+});
+
+export async function createServiceAction(businessId: string, form: FormData) {
+  await settingsChange(businessId, "services", () => createService(businessId, { ...serviceFrom(form), active: true }));
+}
+
+export async function updateServiceAction(businessId: string, serviceId: string, form: FormData) {
+  await settingsChange(businessId, "services", () => updateService(businessId, serviceId, serviceFrom(form)));
+}
+
+const intakeFrom = (form: FormData): IntakeInput => ({
+  label: str(form, "label"),
+  type: z.enum(["text", "date", "choice"]).catch("text").parse(str(form, "type")),
+  options: str(form, "options")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
+  required: checked(form, "required"),
+});
+
+export async function createIntakeAction(businessId: string, form: FormData) {
+  await settingsChange(businessId, "intake", () => createIntakeField(businessId, intakeFrom(form)));
+}
+
+export async function updateIntakeAction(businessId: string, fieldId: string, form: FormData) {
+  await settingsChange(businessId, "intake", () => updateIntakeField(businessId, fieldId, intakeFrom(form)));
+}
+
+export async function deleteIntakeAction(businessId: string, fieldId: string) {
+  await settingsChange(businessId, "intake", () => deleteIntakeField(businessId, fieldId));
+}
+
+export async function moveIntakeAction(businessId: string, fieldId: string, direction: "up" | "down") {
+  await settingsChange(businessId, "intake", () => moveIntakeField(businessId, fieldId, direction));
+}
+
+export async function saveGeneralAction(businessId: string, form: FormData) {
+  await settingsChange(businessId, "general", () =>
+    updateBusinessSettings(businessId, {
+      reminderLeadHours: int(form, "reminderLeadHours"),
+      agentInstructions: str(form, "agentInstructions"),
+    }),
+  );
+}
+
+export async function inviteMemberAction(businessId: string, form: FormData) {
+  await requireBusinessManager(businessId);
+  const email = z.string().trim().toLowerCase().email().safeParse(form.get("email"));
+  const role = form.get("role") === "owner" ? "owner" : "staff";
+  let outcome: string;
+  if (!email.success) {
+    outcome = "error=invalid_email";
+  } else {
+    try {
+      const { added } = await inviteMember(businessId, email.data, role);
+      outcome = added ? `invited=${encodeURIComponent(email.data)}` : "exists=1";
+    } catch (err) {
+      console.error("inviteMember failed", err);
+      outcome = "error=invite_failed";
+    }
+  }
+  revalidatePath(`/app/${businessId}/team`);
+  redirect(`/app/${businessId}/team?${outcome}`);
+}
+
+export async function removeMemberAction(businessId: string, memberId: string) {
+  await requireBusinessManager(businessId);
+  let outcome = "removed=1";
+  try {
+    await removeMember(businessId, memberId);
+  } catch (err) {
+    if (!(err instanceof TeamError)) throw err;
+    outcome = `error=${err.code}`;
+  }
+  revalidatePath(`/app/${businessId}/team`);
+  redirect(`/app/${businessId}/team?${outcome}`);
+}

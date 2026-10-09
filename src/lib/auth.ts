@@ -100,3 +100,14 @@ export async function listMyBusinesses(profile: Profile) {
     .where(eq(schema.businessMembers.userId, profile.id))
     .then((rows) => rows.map((r) => r.business));
 }
+
+// Owners and super-admins change settings and the team; staff work the calendar.
+export function canManage(role: Membership["role"]) {
+  return role === "owner" || role === "super_admin";
+}
+
+export async function requireBusinessManager(businessId: string): Promise<Membership> {
+  const membership = await requireBusinessAccess(businessId);
+  if (!canManage(membership.role)) redirect(`/app/${businessId}`);
+  return membership;
+}
