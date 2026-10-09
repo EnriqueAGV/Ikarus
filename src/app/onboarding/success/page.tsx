@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { connectPhoneNumber } from "@/lib/onboarding";
 
 export const instant = false;
@@ -30,8 +31,11 @@ export default async function OnboardingSuccessPage({
           <h1 className="text-2xl font-semibold">¡Listo! Tu WhatsApp quedó conectado</h1>
           {display && <p className="text-neutral-600">{display}</p>}
           <p className="text-sm text-neutral-500">
-            Ya puedes cerrar esta ventana. Te avisaremos cuando tu asistente esté activo.
+            Te enviamos un correo con el enlace a tu panel, donde configuras tus servicios y horarios.
           </p>
+          <Link href="/app" className="mx-auto rounded-md bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-neutral-900">
+            Entrar a mi panel
+          </Link>
         </>
       ) : (
         <>

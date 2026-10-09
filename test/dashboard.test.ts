@@ -5,14 +5,15 @@ const sent = vi.hoisted(() => [] as { name: string; data: unknown }[]);
 vi.mock("@/inngest/client", () => ({
   inngest: { send: async (e: { name: string; data: unknown }) => void sent.push(e) },
 }));
+const invites = vi.hoisted(() => [] as { email: string; redirectTo?: string }[]);
 vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({
     auth: {
       admin: {
-        createUser: async ({ email }: { email: string }) => ({
-          data: { user: { id: crypto.randomUUID(), email } },
-          error: null,
-        }),
+        inviteUserByEmail: async (email: string, opts?: { redirectTo?: string }) => {
+          invites.push({ email, redirectTo: opts?.redirectTo });
+          return { data: { user: { id: crypto.randomUUID(), email } }, error: null };
+        },
         listUsers: async () => ({ data: { users: [] } }),
       },
     },
@@ -209,8 +210,11 @@ describe("staff replies", () => {
 
 describe("team", () => {
   it("invites once and always keeps an owner", async () => {
-    expect(await team.inviteMember(business.id, "Duena@Luna.mx", "owner")).toEqual({ added: true });
-    expect(await team.inviteMember(business.id, "duena@luna.mx", "owner")).toEqual({ added: false });
+    invites.length = 0;
+    expect(await team.inviteMember(business.id, "Duena@Luna.mx", "owner")).toEqual({ added: true, emailed: true });
+    // Already has an account: no second invitation email.
+    expect(await team.inviteMember(business.id, "duena@luna.mx", "owner")).toEqual({ added: false, emailed: false });
+    expect(invites).toEqual([{ email: "duena@luna.mx", redirectTo: "https://ikarus.test/auth/invite?next=/app" }]);
     await team.inviteMember(business.id, "luz@luna.mx", "staff");
     const members = await team.listMembers(business.id);
     expect(members.map((m) => [m.email, m.role])).toEqual([

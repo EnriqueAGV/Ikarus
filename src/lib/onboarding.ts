@@ -27,45 +27,46 @@ export async function createBusiness(input: {
     .set({ kapsoCustomerId: customer.id })
     .where(eq(schema.businesses.id, business.id));
 
-  const ownerId = await ensureUser(input.ownerEmail, input.ownerName);
+  const owner = await ensureUser(input.ownerEmail, input.ownerName);
   await db
     .insert(schema.businessMembers)
-    .values({ businessId: business.id, userId: ownerId, role: "owner" })
+    .values({ businessId: business.id, userId: owner.id, role: "owner" })
     .onConflictDoNothing();
 
   await issueSetupLink(business.id, input.createdBy);
   return { ...business, kapsoCustomerId: customer.id };
 }
 
-// Returns the profile id for this email, creating the auth user (already
-// confirmed, so they can sign in with a magic link) and profile if needed.
-export async function ensureUser(email: string, fullName?: string) {
+// Returns the profile id for this email, creating the account if needed. A new
+// account gets Supabase's invitation email, whose link signs them in and opens
+// their dashboard (see /auth/invite); after that they use magic links.
+export async function ensureUser(email: string, fullName?: string): Promise<{ id: string; invited: boolean }> {
   const normalized = email.trim().toLowerCase();
   const [existing] = await db
     .select()
     .from(schema.profiles)
     .where(eq(schema.profiles.email, normalized));
-  if (existing) return existing.id;
+  if (existing) return { id: existing.id, invited: false };
 
   const admin = createSupabaseAdminClient();
-  const created = await admin.auth.admin.createUser({
-    email: normalized,
-    email_confirm: true,
-    user_metadata: fullName ? { full_name: fullName } : undefined,
+  const invite = await admin.auth.admin.inviteUserByEmail(normalized, {
+    data: fullName ? { full_name: fullName } : undefined,
+    redirectTo: `${env.APP_URL}/auth/invite?next=/app`,
   });
-  let userId = created.data.user?.id;
+  let userId = invite.data.user?.id;
+  const invited = Boolean(userId);
   if (!userId) {
     // The auth user exists but has never signed in to Ikarus.
     const { data } = await admin.auth.admin.listUsers({ perPage: 1000 });
     userId = data.users.find((u) => u.email?.toLowerCase() === normalized)?.id;
   }
-  if (!userId) throw new Error(`Could not create user ${normalized}`);
+  if (!userId) throw new Error(`Could not create user ${normalized}: ${invite.error?.message ?? "unknown"}`);
 
   await db
     .insert(schema.profiles)
     .values({ id: userId, email: normalized, fullName })
     .onConflictDoNothing();
-  return userId;
+  return { id: userId, invited };
 }
 
 export async function issueSetupLink(businessId: string, createdBy?: string) {

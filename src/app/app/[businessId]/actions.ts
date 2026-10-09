@@ -158,8 +158,8 @@ export async function inviteMemberAction(businessId: string, form: FormData) {
     outcome = "error=invalid_email";
   } else {
     try {
-      const { added } = await inviteMember(businessId, email.data, role);
-      outcome = added ? `invited=${encodeURIComponent(email.data)}` : "exists=1";
+      const { added, emailed } = await inviteMember(businessId, email.data, role);
+      outcome = added ? `invited=${encodeURIComponent(email.data)}${emailed ? "&emailed=1" : ""}` : "exists=1";
     } catch (err) {
       console.error("inviteMember failed", err);
       outcome = "error=invite_failed";
