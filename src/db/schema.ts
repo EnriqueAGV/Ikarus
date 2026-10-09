@@ -82,6 +82,7 @@ export const businesses = pgTable(
     kapsoCustomerId: text("kapso_customer_id").unique(),
     phoneNumberId: text("phone_number_id").unique(),
     wabaId: text("waba_id"),
+    kapsoMessageWebhookId: text("kapso_message_webhook_id"),
     displayPhone: text("display_phone"),
     reminderLeadHours: smallint("reminder_lead_hours").notNull().default(24),
     agentInstructions: text("agent_instructions"),

@@ -1,0 +1,1 @@
+ALTER TABLE "businesses" ADD COLUMN "kapso_message_webhook_id" text;

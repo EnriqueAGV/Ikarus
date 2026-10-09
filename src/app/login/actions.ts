@@ -1,21 +1,21 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { env } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function sendMagicLink(formData: FormData) {
-  const email = String(formData.get("email") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = String(formData.get("next") ?? "/");
   if (!email) redirect("/login?error=email");
 
   const supabase = await createSupabaseServerClient();
-  const appUrl = process.env.APP_URL ?? "http://localhost:3000";
-  const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${appUrl}/auth/callback?next=${encodeURIComponent(next)}`,
-      // Accounts are created by invitation (super-admin or business owner).
-      shouldCreateUser: false,
+      emailRedirectTo: `${env.APP_URL}/auth/callback?next=${encodeURIComponent(next)}`,
+      // Accounts are created by a super-admin, except the listed super-admins.
+      shouldCreateUser: env.SUPER_ADMIN_EMAILS.includes(email),
     },
   });
   redirect(error ? "/login?error=send" : "/login?sent=1");
