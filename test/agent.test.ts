@@ -113,7 +113,7 @@ async function theClient() {
 }
 
 describe("inbound messages", () => {
-  it("stores the client and message, then queues one agent run", async () => {
+  it("stores the client and message, then queues one agent run and stops reminders", async () => {
     expect((await receive("Hola, quiero una cita")).status).toBe(200);
     const client = await theClient();
     expect(client).toMatchObject({ waPhone: CLIENT_PHONE, name: "Ana", businessId: business.id });
@@ -121,6 +121,7 @@ describe("inbound messages", () => {
     expect(msgs).toMatchObject([{ direction: "inbound", body: "Hola, quiero una cita", clientId: client.id }]);
     expect(sent).toEqual([
       { name: "whatsapp/message.received", data: { businessId: business.id, clientId: client.id } },
+      { name: "client/replied", data: { businessId: business.id, clientId: client.id } },
     ]);
   });
 });
@@ -158,7 +159,7 @@ describe("booking agent", () => {
     expect(appt).toMatchObject({ clientId: client.id, serviceId, status: "booked" });
     expect(appt.startsAt.toISOString()).toBe("2026-10-13T16:00:00.000Z");
     expect(await theClient()).toMatchObject({ name: "Ana López", data: { fecha_nacimiento: "1990-05-04" } });
-    expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id } });
+    expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: appt.clientId } });
 
     const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
     expect(send?.path).toBe(`/meta/whatsapp/v24.0/${PHONE_ID}/messages`);
