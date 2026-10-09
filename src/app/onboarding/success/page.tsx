@@ -1,0 +1,46 @@
+import { connectPhoneNumber } from "@/lib/onboarding";
+
+export const instant = false;
+
+// Kapso sends the business here after it connects its WhatsApp number.
+// The project webhook usually gets there first; this is the backup path.
+export default async function OnboardingSuccessPage({
+  searchParams,
+}: PageProps<"/onboarding/success">) {
+  const params = await searchParams;
+  const phoneNumberId = typeof params.phone_number_id === "string" ? params.phone_number_id : null;
+  const setupLinkId = typeof params.setup_link_id === "string" ? params.setup_link_id : undefined;
+  const display =
+    typeof params.display_phone_number === "string" ? params.display_phone_number : null;
+
+  let connected = false;
+  if (phoneNumberId) {
+    try {
+      const result = await connectPhoneNumber({ phoneNumberId, setupLinkId });
+      connected = result.ok;
+    } catch (err) {
+      console.error("Connecting number from redirect failed", err);
+    }
+  }
+
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 px-4 text-center">
+      {connected ? (
+        <>
+          <h1 className="text-2xl font-semibold">¡Listo! Tu WhatsApp quedó conectado</h1>
+          {display && <p className="text-neutral-600">{display}</p>}
+          <p className="text-sm text-neutral-500">
+            Ya puedes cerrar esta ventana. Te avisaremos cuando tu asistente esté activo.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1 className="text-2xl font-semibold">Recibimos tu conexión</h1>
+          <p className="text-sm text-neutral-500">
+            Estamos terminando de configurarla. Si en unos minutos no ves cambios, contacta a quien te envió el enlace.
+          </p>
+        </>
+      )}
+    </main>
+  );
+}

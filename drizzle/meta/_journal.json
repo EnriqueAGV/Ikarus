@@ -15,6 +15,13 @@
       "when": 1791507760094,
       "tag": "0001_appointments_no_overlap",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791508294824,
+      "tag": "0002_business_message_webhook",
+      "breakpoints": true
     }
   ]
 }

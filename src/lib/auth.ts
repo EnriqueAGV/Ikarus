@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db, schema } from "@/db";
+import { env } from "@/lib/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type Profile = typeof schema.profiles.$inferSelect;
@@ -17,11 +18,26 @@ export const getCurrentProfile = cache(async (): Promise<Profile | null> => {
     .select()
     .from(schema.profiles)
     .where(eq(schema.profiles.id, user.id));
-  if (existing) return existing;
+  const isListedAdmin = env.SUPER_ADMIN_EMAILS.includes(user.email.toLowerCase());
+  if (existing) {
+    if (isListedAdmin && !existing.isSuperAdmin) {
+      const [upgraded] = await db
+        .update(schema.profiles)
+        .set({ isSuperAdmin: true })
+        .where(eq(schema.profiles.id, user.id))
+        .returning();
+      return upgraded;
+    }
+    return existing;
+  }
 
   const [created] = await db
     .insert(schema.profiles)
-    .values({ id: user.id, email: user.email })
+    .values({
+      id: user.id,
+      email: user.email.toLowerCase(),
+      isSuperAdmin: isListedAdmin,
+    })
     .onConflictDoNothing()
     .returning();
   return created ?? null;
