@@ -5,7 +5,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 // Landing page for Supabase invitation emails. Admin invitations return the
 // session in the URL fragment (never sent to the server), so it is read here
-// and stored as the usual auth cookies before opening the dashboard.
+// and stored as the usual auth cookies, then the user creates their password.
 export default function InvitePage() {
   const [failed, setFailed] = useState(false);
 
@@ -20,7 +20,7 @@ export default function InvitePage() {
       })
       .then(({ error }) => {
         if (error) setFailed(true);
-        else window.location.replace(safeNext);
+        else window.location.replace(`/auth/set-password?next=${encodeURIComponent(safeNext)}`);
       }, () => setFailed(true));
   }, []);
 
@@ -30,10 +30,10 @@ export default function InvitePage() {
         <>
           <h1 className="text-2xl font-semibold">El enlace ya no es válido</h1>
           <p className="text-sm text-neutral-500">
-            Puede que haya expirado o que ya lo hayas usado. Entra con tu correo y te enviaremos un enlace nuevo.
+            Puede que haya expirado o que ya lo hayas usado. Pide un enlace nuevo para crear tu contraseña.
           </p>
-          <a href="/login" className="mx-auto rounded-md bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-neutral-900">
-            Ir a iniciar sesión
+          <a href="/login/forgot" className="mx-auto rounded-md bg-neutral-900 px-4 py-2 text-sm text-white dark:bg-white dark:text-neutral-900">
+            Pedir un enlace nuevo
           </a>
         </>
       ) : (
