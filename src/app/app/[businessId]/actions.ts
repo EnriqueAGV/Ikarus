@@ -27,7 +27,7 @@ import {
   type PractitionerInput,
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
-import { PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
+import { createPatient, PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
 import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
@@ -123,6 +123,26 @@ export async function saveClinicalAction(businessId: string, clientId: string, f
       chronicConditions: nullable(form, "chronicConditions"),
     }),
   );
+}
+
+// A patient registered by hand. Errors come back to the list with the form open.
+export async function createPatientAction(businessId: string, form: FormData) {
+  const membership = await requireBusinessAccess(businessId);
+  const sex = form.get("sex");
+  let id: string;
+  try {
+    id = await createPatient(membership, {
+      name: str(form, "name"),
+      phone: nullable(form, "phone"),
+      dateOfBirth: nullable(form, "dateOfBirth"),
+      sex: sex === "female" || sex === "male" ? sex : null,
+    });
+  } catch (err) {
+    if (!(err instanceof PatientError)) throw err;
+    redirect(`/app/${businessId}/clients?new=1&recordError=${err.code}`);
+  }
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}/clients/${id}?saved=nuevo`);
 }
 
 export async function saveHoursAction(businessId: string, practitionerId: string, form: FormData) {

@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   customType,
   date,
@@ -15,6 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { decrypt, encrypt } from "../lib/crypto";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
@@ -253,7 +255,13 @@ export const clients = pgTable(
   {
     id: id(),
     businessId: businessId(),
-    waPhone: text("wa_phone").notNull(), // E.164 without "+", as WhatsApp sends it
+    // E.164 without "+", as WhatsApp sends it. Null for a patient the clinic
+    // registered without WhatsApp.
+    waPhone: text("wa_phone"),
+    // Several patients can share one WhatsApp number (a mother and her son).
+    // The number's conversation, consent and agent pause live on its holder,
+    // the patient without holder_id; the others point to it.
+    holderId: uuid("holder_id").references((): AnyPgColumn => clients.id, { onDelete: "restrict" }),
     name: text("name"),
     data: encryptedJson<Record<string, unknown>>("data", "clients.data")
       .notNull()
@@ -277,7 +285,13 @@ export const clients = pgTable(
     }),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("clients_phone").on(t.businessId, t.waPhone)],
+  (t) => [
+    uniqueIndex("clients_phone_holder")
+      .on(t.businessId, t.waPhone)
+      .where(sql`${t.holderId} is null and ${t.waPhone} is not null`),
+    index("clients_phone").on(t.businessId, t.waPhone),
+    index("clients_holder").on(t.holderId),
+  ],
 );
 
 // A Postgres exclusion constraint (see drizzle/0001_appointments_no_overlap.sql)

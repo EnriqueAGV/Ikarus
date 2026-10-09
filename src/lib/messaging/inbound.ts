@@ -1,5 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { holderOfNumber } from "@/lib/household";
 
 // Shape of Kapso's whatsapp.message.received payload, limited to what we read.
 export type KapsoInbound = {
@@ -69,10 +70,8 @@ export async function storeInbound(p: KapsoInbound): Promise<StoredInbound | nul
       name: p.conversation?.contact_name || null,
     })
     .onConflictDoNothing();
-  const [client] = await db
-    .select()
-    .from(schema.clients)
-    .where(and(eq(schema.clients.businessId, business.id), eq(schema.clients.waPhone, phone)));
+  // The conversation belongs to the number's holder, whoever else shares it.
+  const client = (await holderOfNumber(business.id, phone))!;
 
   const [message] = await db
     .insert(schema.messages)

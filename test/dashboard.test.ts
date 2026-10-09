@@ -335,7 +335,7 @@ describe("several doctors", () => {
   it("keeps the doctor when a patient reschedules", async () => {
     const booked = await book("2026-10-12T11:00", secondId);
     if (!booked.ok) throw new Error(booked.reason);
-    const moved = await rescheduleByClient({ business, clientId, appointmentId: booked.appointment.id, localStart: "2026-10-12T14:00", now: NOW });
+    const moved = await rescheduleByClient({ business, clientIds: clientId, appointmentId: booked.appointment.id, localStart: "2026-10-12T14:00", now: NOW });
     expect(moved.ok && moved.appointment.practitionerId).toBe(secondId);
   });
 
@@ -421,3 +421,60 @@ describe("patient record", () => {
     expect(patients.normalizeDui("")).toBeNull();
   });
 });
+
+describe("patients registered by hand", () => {
+  async function assistant() {
+    const [profile] = await db.insert(schema.profiles).values({ id: crypto.randomUUID(), email: "luz@luna.mx" }).returning();
+    return { role: "assistant" as const, managesClinic: false, practitionerId: null, business: { id: business.id }, profile: { id: profile.id } };
+  }
+  const blank = { dateOfBirth: null, sex: null };
+
+  it("joins a number already in use, becomes the holder of a new one, or has none", async () => {
+    const luz = await assistant();
+    // Ana (5215511112222) is already a patient; her son joins her number.
+    const son = await patients.createPatient(luz, { ...blank, name: "Mateo", phone: "+52 1 55 1111 2222", dateOfBirth: "2018-03-01" }, NOW);
+    const local = await patients.createPatient(luz, { ...blank, name: "Rosa", phone: "7012-3456" }, NOW);
+    const none = await patients.createPatient(luz, { ...blank, name: "Don Carlos", phone: " " }, NOW);
+    const rows = Object.fromEntries((await db.select().from(schema.clients)).map((c) => [c.id, c]));
+    expect(rows[son]).toMatchObject({ waPhone: "5215511112222", holderId: clientId, dateOfBirth: "2018-03-01" });
+    expect(rows[local]).toMatchObject({ waPhone: "50370123456", holderId: null });
+    expect(rows[none]).toMatchObject({ waPhone: null, holderId: null });
+    expect(labels.formatPhone(null)).toBe("Sin WhatsApp");
+
+    // Each page knows who shares the number and where the conversation is.
+    const detail = await dashboard.getClientDetail(business.id, son);
+    expect(detail?.conversation.id).toBe(clientId);
+    expect(detail?.others.map((o) => o.name)).toEqual(["Ana"]);
+    expect((await dashboard.getClientDetail(business.id, clientId))?.others.map((o) => o.name)).toEqual(["Mateo"]);
+    // Only one holder per number.
+    await expect(db.insert(schema.clients).values({ businessId: business.id, waPhone: "5215511112222" })).rejects.toThrow();
+    expect((await patients.recentAccess(business.id, son)).map((l) => l.action)).toEqual(["edit_chart"]);
+  });
+
+  it("validates the name and phone", async () => {
+    const luz = await assistant();
+    await expect(patients.createPatient(luz, { ...blank, name: " ", phone: null }, NOW)).rejects.toThrow("name_required_patient");
+    await expect(patients.createPatient(luz, { ...blank, name: "Rosa", phone: "12345" }, NOW)).rejects.toThrow("invalid_phone");
+    const { normalizePhone } = await import("@/lib/household");
+    expect(normalizePhone("7012 3456")).toBe("50370123456");
+    expect(normalizePhone("+503 7012-3456")).toBe("50370123456");
+    expect(normalizePhone("")).toBeNull();
+    expect(normalizePhone("1234567890123456")).toBeUndefined();
+  });
+
+  it("sends staff replies about a dependent to the holder's number and pauses the holder", async () => {
+    const luz = await assistant();
+    const son = await patients.createPatient(luz, { ...blank, name: "Mateo", phone: "5215511112222" }, NOW);
+    await db.insert(schema.messages).values({ businessId: business.id, clientId, direction: "inbound", type: "text", body: "Hola", createdAt: new Date(NOW.getTime() - 3600_000) });
+    expect(await sendStaffReply({ business, clientId: son, text: "Hola, sobre Mateo", sentBy: "staff-1", now: NOW })).toEqual({ ok: true });
+    expect(kapso.calls[0].body).toMatchObject({ to: "5215511112222" });
+    const [holder] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(holder.agentPaused).toBe(true);
+    const [out] = await db.select().from(schema.messages).where(eq(schema.messages.direction, "outbound"));
+    expect(out.clientId).toBe(clientId);
+
+    const none = await patients.createPatient(luz, { ...blank, name: "Don Carlos", phone: null }, NOW);
+    expect(await sendStaffReply({ business, clientId: none, text: "Hola", sentBy: "staff-1", now: NOW })).toEqual({ ok: false, reason: "no_whatsapp" });
+  });
+});
+

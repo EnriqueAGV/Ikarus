@@ -32,15 +32,18 @@ const NOW = new Date("2026-10-12T15:00:00Z");
 const CLIENT_PHONE = "5215511112222";
 
 type Step = { tools?: { name: string; input: unknown }[]; text?: string };
+// A step can be computed when it is reached, e.g. to use an id a tool just created.
+type ScriptedStep = Step | (() => Promise<Step>);
 
 // Scripted stand-in for an OpenAI-compatible endpoint: returns the next step
 // on each call and records every request.
-function fakeLlm(steps: Step[]) {
+function fakeLlm(steps: ScriptedStep[]) {
   const requests: ChatRequest[] = [];
   let i = 0;
   const complete = async (req: ChatRequest) => {
     requests.push(structuredClone(req));
-    const step = steps[i++] ?? { text: "(sin guion)" };
+    const next = steps[i++] ?? { text: "(sin guion)" };
+    const step = typeof next === "function" ? await next() : next;
     const tool_calls = (step.tools ?? []).map((t, n) => ({
       id: `call_${i}_${n}`,
       type: "function" as const,
@@ -377,6 +380,73 @@ describe("booking agent", () => {
       status: "skipped",
       reason: "already_answered",
     });
+  });
+});
+
+describe("several patients on one number", () => {
+  it("adds the writer's son and books for him, sending to the mother's number", async () => {
+    await receive("Hola, quiero cita para mi hijo mañana a las 10");
+    const mother = await theClient();
+    await db.update(schema.clients).set({ data: { fecha_nacimiento: "1990-05-04" } }).where(eq(schema.clients.id, mother.id));
+    const sonOf = async () => (await db.select().from(schema.clients).where(eq(schema.clients.holderId, mother.id)))[0];
+    const claude = fakeLlm([
+      { tools: [{ name: "add_patient", input: { name: "Mateo López" } }] },
+      async () => {
+        const son = await sonOf();
+        return {
+          tools: [
+            { name: "save_client_info", input: { patient_id: son.id, name: null, answers: [{ key: "fecha_nacimiento", value: "2018-03-01" }] } },
+            { name: "book_appointment", input: { patient_id: son.id, service_id: serviceId, start: "2026-10-13T10:00" } },
+          ],
+        };
+      },
+      { text: "Listo, Mateo queda agendado el martes 13 a las 10:00." },
+    ]);
+    await runAgent({ businessId: business.id, clientId: mother.id, now: NOW, llm: claude.client });
+
+    const [son] = await db.select().from(schema.clients).where(eq(schema.clients.holderId, mother.id));
+    expect(son).toMatchObject({ name: "Mateo López", waPhone: CLIENT_PHONE, dateOfBirth: "2018-03-01" });
+    expect(lastToolResults(claude.requests[1])[0].content).toContain(son.id);
+    const [appt] = await db.select().from(schema.appointments);
+    expect(appt).toMatchObject({ clientId: son.id, status: "booked" });
+    // Reminders for the son go through the mother's conversation.
+    expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: mother.id } });
+    const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    expect(send?.body).toMatchObject({ to: CLIENT_PHONE });
+    // The prompt tells the model to ask who the appointment is for.
+    expect(String(claude.requests[0].messages[0].content)).toContain("¿La cita es para usted o para otra persona?");
+
+    // The next turn lists both patients and the son's appointment under his name.
+    const next = fakeLlm([{ tools: [{ name: "list_my_appointments", input: {} }] }, { text: "Tiene una cita." }]);
+    await receive("¿Qué citas tengo?");
+    await runAgent({ businessId: business.id, clientId: mother.id, now: NOW, llm: next.client });
+    const context = next.requests[0].messages.map((m) => String(m.content)).join("\n");
+    expect(context).toContain(`patient_id ${mother.id} (the person writing): Ana;`);
+    expect(context).toContain(`patient_id ${son.id}: Mateo López`);
+    expect(context).toMatch(/Mateo López, Corte de cabello/);
+    expect(lastToolResults(next.requests[1])[0].content).toContain('"patient":"Mateo López"');
+  });
+
+  it("refuses a patient_id from another number and never runs for a dependent", async () => {
+    await receive("Hola");
+    const mother = await theClient();
+    const [stranger] = await db.insert(schema.clients).values({ businessId: business.id, waPhone: "5210000000000", name: "Otra" }).returning();
+    const claude = fakeLlm([
+      { tools: [{ name: "save_client_info", input: { patient_id: stranger.id, name: "Cambiado", answers: [] } }] },
+      { text: "¿Para quién es la cita?" },
+    ]);
+    await runAgent({ businessId: business.id, clientId: mother.id, now: NOW, llm: claude.client });
+    expect(lastToolResults(claude.requests[1])[0].error).toBe(true);
+    const [unchanged] = await db.select().from(schema.clients).where(eq(schema.clients.id, stranger.id));
+    expect(unchanged.name).toBe("Otra");
+
+    const [son] = await db.insert(schema.clients).values({ businessId: business.id, waPhone: CLIENT_PHONE, holderId: mother.id, name: "Mateo" }).returning();
+    expect(await runAgent({ businessId: business.id, clientId: son.id, now: NOW, llm: fakeLlm([]).client })).toMatchObject({ status: "skipped" });
+
+    // A new message from the number still lands on the mother.
+    await receive("Otra pregunta");
+    const msgs = await db.select().from(schema.messages).where(eq(schema.messages.direction, "inbound"));
+    expect(new Set(msgs.map((m) => m.clientId))).toEqual(new Set([mother.id]));
   });
 });
 

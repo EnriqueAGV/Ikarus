@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { getPractitioner } from "@/lib/booking/practitioners";
+import { holderOfNumber, normalizePhone } from "@/lib/household";
 import { can, type Role } from "@/lib/permissions";
 
 type AccessAction = (typeof schema.accessAction.enumValues)[number];
@@ -13,7 +14,16 @@ export type Actor = {
 };
 
 export class PatientError extends Error {
-  constructor(readonly code: "not_found" | "forbidden" | "invalid_dui" | "invalid_birth_date" | "unknown_practitioner") {
+  constructor(
+    readonly code:
+      | "not_found"
+      | "forbidden"
+      | "invalid_dui"
+      | "invalid_birth_date"
+      | "unknown_practitioner"
+      | "invalid_phone"
+      | "name_required_patient",
+  ) {
     super(code);
   }
 }
@@ -157,3 +167,35 @@ export async function recentAccess(businessId: string, clientId: string, limit =
     .orderBy(desc(schema.accessLog.createdAt))
     .limit(limit);
 }
+
+// A patient the clinic registers itself, e.g. one who called or walked in.
+// With a WhatsApp number already in use, they join that number (the agent
+// then knows them when the holder writes); otherwise they become its holder.
+export async function createPatient(
+  actor: Actor,
+  input: { name: string; phone: string | null; dateOfBirth: string | null; sex: "female" | "male" | null },
+  now = new Date(),
+) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  const name = blank(input.name);
+  if (!name) throw new PatientError("name_required_patient");
+  const phone = normalizePhone(input.phone);
+  if (phone === undefined) throw new PatientError("invalid_phone");
+  const values = { name, dateOfBirth: birthDate(input.dateOfBirth, now), sex: input.sex };
+  return db.transaction(async (tx) => {
+    const holder = phone ? await holderOfNumber(actor.business.id, phone, tx) : null;
+    const [patient] = await tx
+      .insert(schema.clients)
+      .values({ ...values, businessId: actor.business.id, waPhone: phone, holderId: holder?.id ?? null })
+      .returning({ id: schema.clients.id });
+    await tx.insert(schema.accessLog).values({
+      businessId: actor.business.id,
+      clientId: patient.id,
+      userId: actor.profile.id,
+      practitionerId: actor.practitionerId,
+      action: "edit_chart",
+    });
+    return patient.id;
+  });
+}
+

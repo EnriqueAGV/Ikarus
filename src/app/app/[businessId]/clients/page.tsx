@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { requireBusinessAccess } from "@/lib/auth";
 import { listClients } from "@/lib/dashboard/appointments";
-import { formatLocal, formatPhone } from "@/lib/dashboard/labels";
+import { formatLocal, formatPhone, settingsErrorLabel } from "@/lib/dashboard/labels";
+import { createPatientAction } from "../actions";
 
 export default async function ClientsPage({ params, searchParams }: PageProps<"/app/[businessId]/clients">) {
   const { businessId } = await params;
-  const { q } = await searchParams;
+  const { q, new: open, recordError } = await searchParams;
   const { business } = await requireBusinessAccess(businessId);
   const query = typeof q === "string" ? q : "";
   const rows = await listClients(business.id, query);
+  const error = typeof recordError === "string" ? settingsErrorLabel[recordError] ?? "Algo salió mal." : null;
+  const input = "rounded-md border px-2 py-1 text-sm";
+  const label = "flex flex-col gap-1 text-xs text-neutral-500";
 
   return (
     <div className="flex flex-col gap-4">
@@ -21,9 +25,42 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
         />
         <button className="rounded-md border px-3 py-1.5 text-sm">Buscar</button>
       </form>
+      <details open={open === "1"} className="rounded-md border p-4">
+        <summary className="cursor-pointer text-sm font-medium">Nuevo paciente</summary>
+        <form action={createPatientAction.bind(null, business.id)} className="mt-3 grid gap-3 sm:grid-cols-2">
+          {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
+          <label className={label}>
+            Nombre completo
+            <input name="name" required className={input} />
+          </label>
+          <label className={label}>
+            WhatsApp (opcional)
+            <input name="phone" type="tel" placeholder="7000 0000" className={input} />
+          </label>
+          <label className={label}>
+            Fecha de nacimiento
+            <input name="dateOfBirth" type="date" className={input} />
+          </label>
+          <label className={label}>
+            Sexo
+            <select name="sex" defaultValue="" className={input}>
+              <option value="">Sin indicar</option>
+              <option value="female">Femenino</option>
+              <option value="male">Masculino</option>
+            </select>
+          </label>
+          <p className="text-xs text-neutral-500 sm:col-span-2">
+            Si el número ya es de otro paciente (por ejemplo, la mamá), el nuevo paciente comparte ese WhatsApp y el
+            asistente lo reconoce cuando ella escribe.
+          </p>
+          <div className="flex justify-end sm:col-span-2">
+            <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Registrar paciente</button>
+          </div>
+        </form>
+      </details>
       {rows.length === 0 ? (
         <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
-          {query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp."}
+          {query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp, o puedes registrarlos en Nuevo paciente."}
         </p>
       ) : (
         <ul className="divide-y rounded-md border">
