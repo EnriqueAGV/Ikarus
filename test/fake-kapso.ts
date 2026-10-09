@@ -6,7 +6,7 @@ export type Call = { method: string; path: string; body: unknown };
 // A tiny stand-in for the Kapso API that records calls and answers with
 // canned responses keyed by "METHOD /path".
 export async function startFakeKapso(
-  routes: Record<string, (body: unknown) => { status?: number; json: unknown }>,
+  routes: Record<string, (body: unknown) => { status?: number; json: unknown; delayMs?: number }>,
 ) {
   const calls: Call[] = [];
   const server: Server = createServer((req, res) => {
@@ -21,8 +21,11 @@ export async function startFakeKapso(
         return m === req.method && new RegExp(`^${p}$`).test(path);
       });
       const out = key ? routes[key](body) : { status: 404, json: { error: "not found" } };
-      res.writeHead(out.status ?? 200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(out.json));
+      setTimeout(() => {
+        if (res.destroyed) return;
+        res.writeHead(out.status ?? 200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(out.json));
+      }, out.delayMs ?? 0);
     });
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
