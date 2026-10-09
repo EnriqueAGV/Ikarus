@@ -6,6 +6,7 @@ describe("isEmergency", () => {
     for (const text of [
       "Tengo DOLOR DE PECHO desde la mañana",
       "mi mamá no puede respirar",
+      "mi hijo no respira",
       "se desmayó mi hijo",
       "Es una emergencia!!",
       "esta sangrando mucho",

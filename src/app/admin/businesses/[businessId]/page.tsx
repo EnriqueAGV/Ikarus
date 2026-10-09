@@ -49,7 +49,7 @@ export default async function AdminBusinessPage({
       .orderBy(desc(schema.setupLinks.createdAt)),
     db.select().from(schema.templates).where(eq(schema.templates.businessId, businessId)),
     db
-      .select({ email: schema.profiles.email, role: schema.businessMembers.role })
+      .select({ email: schema.profiles.email, role: schema.businessMembers.role, managesClinic: schema.businessMembers.managesClinic })
       .from(schema.businessMembers)
       .innerJoin(schema.profiles, eq(schema.profiles.id, schema.businessMembers.userId))
       .where(eq(schema.businessMembers.businessId, businessId)),
@@ -131,7 +131,7 @@ export default async function AdminBusinessPage({
           {members.map((m) => (
             <li key={m.email} className="flex justify-between py-1">
               <span>{m.email}</span>
-              <span className="text-neutral-500">{m.role === "owner" ? "Dueño" : "Equipo"}</span>
+              <span className="text-neutral-500">{m.role === "doctor" ? "Doctor" : "Asistente"}{m.managesClinic ? " · administra" : ""}</span>
             </li>
           ))}
         </ul>

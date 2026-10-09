@@ -23,7 +23,11 @@ const businessId = () =>
     .notNull()
     .references(() => businesses.id, { onDelete: "cascade" });
 
-export const memberRole = pgEnum("member_role", ["owner", "staff"]);
+// A clinic has doctors and assistants; manages_clinic on the membership is the
+// separate permission to edit settings and invite people.
+export const memberRole = pgEnum("member_role", ["doctor", "assistant"]);
+export const patientSex = pgEnum("patient_sex", ["female", "male"]);
+export const accessAction = pgEnum("access_action", ["view_chart", "edit_chart", "edit_clinical"]);
 export const businessStatus = pgEnum("business_status", [
   "invited",
   "connected",
@@ -103,7 +107,8 @@ export const businessMembers = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    role: memberRole("role").notNull().default("staff"),
+    role: memberRole("role").notNull().default("assistant"),
+    managesClinic: boolean("manages_clinic").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("business_members_unique").on(t.businessId, t.userId)],
@@ -226,6 +231,22 @@ export const clients = pgTable(
     name: text("name"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
     agentPaused: boolean("agent_paused").notNull().default(false),
+    // The record header. Patients belong to the clinic, so a patient seen by
+    // two doctors has one record.
+    dateOfBirth: date("date_of_birth"),
+    sex: patientSex("sex"),
+    dui: text("dui"),
+    address: text("address"),
+    guardianName: text("guardian_name"),
+    guardianPhone: text("guardian_phone"),
+    emergencyContactName: text("emergency_contact_name"),
+    emergencyContactPhone: text("emergency_contact_phone"),
+    // Doctors only (can(member, "chart.clinical")).
+    allergies: text("allergies"),
+    chronicConditions: text("chronic_conditions"),
+    preferredPractitionerId: uuid("preferred_practitioner_id").references(() => practitioners.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("clients_phone").on(t.businessId, t.waPhone)],
@@ -301,6 +322,47 @@ export const templates = pgTable(
       .defaultNow(),
   },
   (t) => [uniqueIndex("templates_name").on(t.businessId, t.name, t.language)],
+);
+
+// Who looked at or changed which patient's record, and when. Rows are never
+// deleted, so neither the clinic nor the patient can be while any exist.
+export const accessLog = pgTable(
+  "access_log",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    practitionerId: uuid("practitioner_id").references(() => practitioners.id, { onDelete: "restrict" }),
+    action: accessAction("action").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("access_log_client_time").on(t.clientId, t.createdAt)],
+);
+
+// A patient's acceptance of a version of the privacy notice, with the
+// WhatsApp message that accepted it. Health data needs express consent.
+export const consents = pgTable(
+  "consents",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    noticeVersion: text("notice_version").notNull(),
+    messageId: uuid("message_id").references(() => messages.id, { onDelete: "set null" }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("consents_client_version").on(t.clientId, t.noticeVersion)],
 );
 
 // Kapso can deliver a webhook more than once; X-Idempotency-Key dedupes it.

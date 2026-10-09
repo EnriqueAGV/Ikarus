@@ -123,7 +123,7 @@ describe("createBusiness", () => {
     const [profile] = await db.select().from(schema.profiles);
     expect(profile.email).toBe("duena@luna.mx");
     const members = await db.select().from(schema.businessMembers);
-    expect(members).toMatchObject([{ businessId: business.id, userId: profile.id, role: "owner" }]);
+    expect(members).toMatchObject([{ businessId: business.id, userId: profile.id, role: "doctor", managesClinic: true }]);
     // The default intake: date of birth, first visit or follow-up, and reason.
     const intake = await db.select().from(schema.intakeFields).orderBy(schema.intakeFields.position);
     expect(intake.map((f) => [f.key, f.type, f.required])).toEqual([

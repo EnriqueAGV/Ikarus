@@ -195,3 +195,21 @@ export function sendTemplate(phoneNumberId: string, to: string, t: TemplateSend)
     },
   ).then((r) => r.messages?.[0]?.id ?? null);
 }
+
+// A message with up to three reply buttons; a tap comes back with the button's id.
+export function sendButtons(phoneNumberId: string, to: string, body: string, buttons: { id: string; title: string }[]) {
+  return kapso<{ messages?: { id: string }[] }>(
+    "POST",
+    `/meta/whatsapp/${GRAPH_VERSION}/${phoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        body: { text: body },
+        action: { buttons: buttons.map((b) => ({ type: "reply", reply: b })) },
+      },
+    },
+  ).then((r) => r.messages?.[0]?.id ?? null);
+}

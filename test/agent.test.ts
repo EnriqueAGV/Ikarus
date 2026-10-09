@@ -23,6 +23,7 @@ process.env.KAPSO_API_BASE_URL = kapso.url;
 const { db, schema } = await import("@/db");
 const { eq, sql } = await import("drizzle-orm");
 const { runAgent } = await import("@/lib/agent/run");
+const { NOTICE_VERSION } = await import("@/lib/agent/consent");
 const { createPractitioner } = await import("@/lib/booking/practitioners");
 const messagesRoute = await import("@/app/api/webhooks/kapso/messages/route");
 
@@ -116,9 +117,42 @@ async function receive(text: string, id = `wamid.in.${Math.random()}`) {
   );
 }
 
-async function theClient() {
+// Booking tests start from a patient who already accepted the privacy notice.
+async function theClient({ consented = true } = {}) {
   const [c] = await db.select().from(schema.clients);
+  if (consented) {
+    await db
+      .insert(schema.consents)
+      .values({ businessId: c.businessId, clientId: c.id, noticeVersion: NOTICE_VERSION })
+      .onConflictDoNothing();
+  }
   return c;
+}
+
+async function tap(id: string, title: string) {
+  const body = {
+    message: {
+      id: `wamid.tap.${Math.random()}`,
+      from: CLIENT_PHONE,
+      type: "interactive",
+      interactive: { type: "button_reply", button_reply: { id, title } },
+      kapso: { origin: "cloud_api" },
+    },
+    conversation: { phone_number: `+${CLIENT_PHONE}`, contact_name: "Ana" },
+    phone_number_id: PHONE_ID,
+  };
+  const raw = JSON.stringify(body);
+  return messagesRoute.POST(
+    new Request("https://ikarus.test/api/webhooks/kapso/messages", {
+      method: "POST",
+      body: raw,
+      headers: {
+        "x-webhook-event": "whatsapp.message.received",
+        "x-idempotency-key": body.message.id,
+        "x-webhook-signature": createHmac("sha256", "message-secret").update(raw).digest("hex"),
+      },
+    }),
+  );
 }
 
 describe("inbound messages", () => {
@@ -167,7 +201,8 @@ describe("booking agent", () => {
     const [appt] = await db.select().from(schema.appointments);
     expect(appt).toMatchObject({ clientId: client.id, serviceId, status: "booked" });
     expect(appt.startsAt.toISOString()).toBe("2026-10-13T16:00:00.000Z");
-    expect(await theClient()).toMatchObject({ name: "Ana López", data: { fecha_nacimiento: "1990-05-04" } });
+    // The birth date also lands in the record header.
+    expect(await theClient()).toMatchObject({ name: "Ana López", data: { fecha_nacimiento: "1990-05-04" }, dateOfBirth: "1990-05-04" });
     expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: appt.clientId } });
 
     const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
@@ -341,6 +376,60 @@ describe("booking agent", () => {
     expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client })).toEqual({
       status: "skipped",
       reason: "already_answered",
+    });
+  });
+});
+
+describe("consent", () => {
+  it("asks once for the privacy notice and waits for Acepto before the LLM", async () => {
+    await receive("Hola, quiero una cita");
+    await receive("¿Tienen el martes?");
+    const client = await theClient({ consented: false });
+    const claude = fakeLlm([{ text: "Con gusto. ¿Me dice su nombre completo?" }]);
+    const run = () => runAgent({ businessId: business.id, clientId: client.id, now: new Date(), llm: claude.client });
+
+    expect(await run()).toEqual({ status: "consent_requested" });
+    expect(claude.requests).toHaveLength(0);
+    const ask = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    expect(ask?.body).toMatchObject({
+      type: "interactive",
+      interactive: { type: "button", action: { buttons: [{ type: "reply", reply: { id: "consent:accept", title: "Acepto" } }] } },
+    });
+    expect(JSON.stringify(ask?.body)).toContain(`/privacidad/${business.id}`);
+    // Both messages of the burst are covered by one request.
+    expect(await run()).toEqual({ status: "skipped", reason: "already_answered" });
+
+    // Anything but an acceptance gets the request again.
+    await receive("¿Y cuánto cuesta?");
+    expect(await run()).toEqual({ status: "consent_requested" });
+    expect(await db.select().from(schema.consents)).toHaveLength(0);
+
+    await tap("consent:accept", "Acepto");
+    expect(await run()).toEqual({ status: "replied", reply: "Con gusto. ¿Me dice su nombre completo?" });
+    const [consent] = await db.select().from(schema.consents);
+    const [accepted] = await db.select().from(schema.messages).where(eq(schema.messages.id, consent.messageId!));
+    expect(consent).toMatchObject({ clientId: client.id, noticeVersion: NOTICE_VERSION });
+    expect(accepted).toMatchObject({ direction: "inbound", body: "Acepto" });
+  });
+
+  it("accepts a typed ACEPTO only after the notice was shown", async () => {
+    await receive("Acepto");
+    const client = await theClient({ consented: false });
+    const claude = fakeLlm([{ text: "Gracias. ¿En qué le ayudo?" }]);
+    const run = () => runAgent({ businessId: business.id, clientId: client.id, now: new Date(), llm: claude.client });
+    expect(await run()).toEqual({ status: "consent_requested" });
+    await receive("Sí, acepto.");
+    expect(await run()).toEqual({ status: "replied", reply: "Gracias. ¿En qué le ayudo?" });
+    expect(await db.select().from(schema.consents)).toHaveLength(1);
+  });
+
+  it("still answers an emergency before consent", async () => {
+    await receive("Mi papá tiene dolor de pecho");
+    const client = await theClient({ consented: false });
+    const claude = fakeLlm([]);
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: new Date(), llm: claude.client })).toEqual({
+      status: "emergency",
+      replied: true,
     });
   });
 });
