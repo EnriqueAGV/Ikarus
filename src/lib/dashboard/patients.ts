@@ -4,7 +4,7 @@ import { getPractitioner } from "@/lib/booking/practitioners";
 import { can, type Role } from "@/lib/permissions";
 
 type AccessAction = (typeof schema.accessAction.enumValues)[number];
-type Actor = {
+export type Actor = {
   role: Role;
   managesClinic: boolean;
   practitionerId: string | null;

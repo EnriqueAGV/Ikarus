@@ -24,6 +24,8 @@ const schema = z.object({
   LLM_BASE_URL: z.string().url().default("https://api.openai.com/v1"),
   LLM_API_KEY: z.string().min(1).optional(),
   LLM_MODEL: z.string().min(1).optional(),
+  // Read by src/lib/crypto.ts, which validates it when first used.
+  DATA_ENCRYPTION_KEYS: z.string().optional(),
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
 });

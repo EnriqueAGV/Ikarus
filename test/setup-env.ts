@@ -8,3 +8,4 @@ process.env.KAPSO_API_KEY ??= "kapso-test-key";
 process.env.KAPSO_PROJECT_WEBHOOK_SECRET ??= "project-secret";
 process.env.KAPSO_MESSAGE_WEBHOOK_SECRET ??= "message-secret";
 process.env.LLM_MODEL ??= "test-model";
+process.env.DATA_ENCRYPTION_KEYS ??= "1:" + Buffer.alloc(32, 7).toString("base64");

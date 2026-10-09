@@ -60,6 +60,13 @@ export const settingsErrorLabel: Record<string, string> = {
   invalid_dui: "El DUI debe tener 9 dígitos (00000000-0).",
   invalid_birth_date: "La fecha de nacimiento no es válida.",
   forbidden: "No tienes permiso para hacer eso.",
+  not_your_note: "Solo el doctor de la nota puede editarla o firmarla.",
+  not_draft: "La nota ya está firmada; agrega una adenda.",
+  empty_note: "Escribe algo en la nota antes de firmarla.",
+  unknown_code: "Uno de los diagnósticos no es un código CIE-10 válido.",
+  invalid_vitals: "Revisa los signos vitales: algún valor no es válido.",
+  unknown_appointment: "Esa cita no es de este paciente.",
+  empty_addendum: "Escribe el texto de la adenda.",
   not_found: "No se encontró.",
   last_manager: "El consultorio debe tener al menos una persona que lo administre.",
   invite_failed: "No se pudo invitar a esa persona.",
@@ -76,3 +83,23 @@ export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MM
 export function formatPhone(waPhone: string) {
   return `+${waPhone}`;
 }
+
+export const accessActionLabel = {
+  view_chart: "Abrió el expediente",
+  edit_chart: "Editó los datos",
+  edit_clinical: "Editó los datos clínicos",
+  create_note: "Creó una nota",
+  sign_note: "Firmó una nota",
+  add_addendum: "Agregó una adenda",
+  print_note: "Imprimió una nota",
+} as const;
+
+export const vitalsLabel = {
+  bloodPressure: ["PA", "mmHg"],
+  heartRate: ["FC", "lpm"],
+  temperature: ["T", "°C"],
+  weight: ["Peso", "kg"],
+  height: ["Talla", "cm"],
+  spo2: ["SpO₂", "%"],
+} as const;
+

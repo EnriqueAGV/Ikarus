@@ -4,17 +4,19 @@ import { can, requireBusinessAccess } from "@/lib/auth";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { getClientDetail } from "@/lib/dashboard/appointments";
 import {
+  accessActionLabel,
   appointmentLabel,
   appointmentTone,
   formatLocal,
   formatPhone,
   settingsErrorLabel,
 } from "@/lib/dashboard/labels";
+import { listNotes } from "@/lib/dashboard/notes";
 import { logChartView, recentAccess } from "@/lib/dashboard/patients";
 import { listIntakeFields } from "@/lib/dashboard/settings";
 import { saveClinicalAction, saveDemographicsAction, setAgentPausedAction, staffReplyAction } from "../../actions";
+import { startNoteAction } from "../../notes-actions";
 
-const accessLabel = { view_chart: "Abrió el expediente", edit_chart: "Editó los datos", edit_clinical: "Editó los datos clínicos" } as const;
 const savedLabel: Record<string, string> = { datos: "Datos guardados.", clinico: "Datos clínicos guardados." };
 
 export default async function ClientPage({ params, searchParams }: PageProps<"/app/[businessId]/clients/[clientId]">) {
@@ -30,7 +32,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   ]);
   if (!detail) notFound();
   await logChartView(membership, clientId);
-  const access = clinical ? await recentAccess(business.id, clientId) : [];
+  const [access, notes] = clinical ? await Promise.all([recentAccess(business.id, clientId), listNotes(membership, clientId)]) : [[], []];
   const { client, appointments, messages } = detail;
   const tz = business.timezone;
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "Algo salió mal." : null;
@@ -156,6 +158,38 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         </section>
       )}
 
+      {clinical && (
+        <section id="notas" className="rounded-md border p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="font-medium">Notas clínicas</h3>
+            {can(membership, "notes.write") && membership.practitionerId && (
+              <form action={startNoteAction.bind(null, business.id, client.id, null)}>
+                <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Nueva nota</button>
+              </form>
+            )}
+          </div>
+          {notes.length === 0 ? (
+            <p className="text-sm text-neutral-500">Sin notas todavía.</p>
+          ) : (
+            <ul className="divide-y text-sm">
+              {notes.map((n) => (
+                <li key={n.id}>
+                  <Link href={`/app/${business.id}/clients/${client.id}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
+                    <span>
+                      {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
+                      <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
+                      {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
+                      {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
+                    </span>
+                    {n.status === "draft" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">Sin firmar</span>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
         <section className="rounded-md border p-4">
           <h3 className="mb-3 font-medium">Respuestas por WhatsApp</h3>
@@ -235,7 +269,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
             {access.map((a) => (
               <li key={a.id} className="flex justify-between gap-2">
                 <span>
-                  {a.practitionerName ?? a.fullName ?? a.email} · {accessLabel[a.action]}
+                  {a.practitionerName ?? a.fullName ?? a.email} · {accessActionLabel[a.action]}
                 </span>
                 <span className="text-neutral-500">{formatLocal(a.createdAt, tz, "d MMM yyyy, HH:mm")}</span>
               </li>
