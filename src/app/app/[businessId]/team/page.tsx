@@ -4,7 +4,7 @@ import { requireBusinessManager } from "@/lib/auth";
 import { settingsErrorLabel } from "@/lib/dashboard/labels";
 import { listMembers } from "@/lib/dashboard/team";
 import { env } from "@/lib/env";
-import { inviteMemberAction, removeMemberAction, setManagesClinicAction } from "../actions";
+import { forgetDevicesAction, inviteMemberAction, removeMemberAction, setManagesClinicAction } from "../actions";
 
 const roleLabel = { doctor: "Doctor", assistant: "Asistente" } as const;
 
@@ -30,6 +30,7 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
         </div>
       )}
       {sp.exists && <p className="rounded-md border p-3 text-sm">Esa persona ya es parte del equipo.</p>}
+      {sp.forgot && <p className="rounded-md border p-3 text-sm">Listo. Esa persona tendrá que confirmar cada dispositivo con un código.</p>}
 
       <ul className="divide-y rounded-md border">
         {members.map((m) => (
@@ -47,6 +48,14 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
                 <button className="text-xs text-neutral-600 hover:underline dark:text-neutral-300">
                   {m.managesClinic ? "Quitar administración" : "Dar administración"}
                 </button>
+              </form>
+              <form action={forgetDevicesAction.bind(null, business.id, m.memberId)}>
+                <ConfirmButton
+                  message={`¿Olvidar los dispositivos de ${m.email}? La próxima vez que entre en cada uno le pediremos un código.`}
+                  className="text-xs text-neutral-600 hover:underline dark:text-neutral-300"
+                >
+                  Olvidar dispositivos
+                </ConfirmButton>
               </form>
               <form action={removeMemberAction.bind(null, business.id, m.memberId)}>
                 <ConfirmButton

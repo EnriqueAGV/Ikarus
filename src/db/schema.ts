@@ -469,6 +469,24 @@ export const noteAddenda = pgTable(
   (t) => [index("note_addenda_note").on(t.noteId, t.createdAt)],
 );
 
+// Browsers where a doctor or clinic manager confirmed a code sent to their
+// email. Only a hash of the cookie's token is kept; deleting the rows makes
+// every one of their devices ask for a code again.
+export const trustedDevices = pgTable(
+  "trusted_devices",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    label: text("label"),
+    createdAt: createdAt(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("trusted_devices_token").on(t.tokenHash), index("trusted_devices_user").on(t.userId)],
+);
+
 // Kapso can deliver a webhook more than once; X-Idempotency-Key dedupes it.
 export const webhookEvents = pgTable("webhook_events", {
   idempotencyKey: text("idempotency_key").primaryKey(),

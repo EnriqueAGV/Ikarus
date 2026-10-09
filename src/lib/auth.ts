@@ -1,9 +1,11 @@
 import { and, eq } from "drizzle-orm";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
-import { can, needsSecondFactor, type Role } from "@/lib/permissions";
+import { DEVICE_COOKIE, isTrustedDevice } from "@/lib/devices";
+import { can, needsDeviceCode, type Role } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type Profile = typeof schema.profiles.$inferSelect;
@@ -53,10 +55,20 @@ export async function requireProfile(): Promise<Profile> {
 export async function requireSuperAdmin(): Promise<Profile> {
   const profile = await requireProfile();
   if (!profile.isSuperAdmin) redirect("/app");
+  await requireTrustedDevice(profile, { role: "super_admin", managesClinic: true }, "/admin");
   return profile;
 }
 
-export { can, needsSecondFactor, type Action, type Role } from "@/lib/permissions";
+// Once per request, however many layouts and pages ask.
+const deviceTrusted = cache((userId: string, token: string | undefined) => isTrustedDevice(userId, token));
+
+async function requireTrustedDevice(profile: Profile, m: { role: Role; managesClinic: boolean }, next: string) {
+  if (!needsDeviceCode(m)) return;
+  const token = (await cookies()).get(DEVICE_COOKIE)?.value;
+  if (!(await deviceTrusted(profile.id, token))) redirect(`/auth/device?next=${encodeURIComponent(next)}`);
+}
+
+export { can, needsDeviceCode, type Action, type Role } from "@/lib/permissions";
 
 export type Membership = {
   profile: Profile;
@@ -68,7 +80,7 @@ export type Membership = {
 };
 
 // Super-admins can open any business; everyone else needs a membership row.
-// Doctors must have passed two-factor sign-in in this session.
+// Doctors and managers must be on a device they confirmed with an emailed code.
 export async function requireBusinessAccess(
   businessId: string,
 ): Promise<Membership> {
@@ -79,6 +91,7 @@ export async function requireBusinessAccess(
     .where(eq(schema.businesses.id, businessId));
   if (!business) redirect("/app");
   if (profile.isSuperAdmin) {
+    await requireTrustedDevice(profile, { role: "super_admin", managesClinic: true }, `/app/${businessId}`);
     return { profile, business, role: "super_admin", managesClinic: true, practitionerId: null };
   }
 
@@ -100,16 +113,8 @@ export async function requireBusinessAccess(
     managesClinic: row.member.managesClinic,
     practitionerId: row.practitionerId,
   };
-  if (needsSecondFactor(membership.role, await assuranceLevel())) {
-    redirect(`/auth/mfa?next=${encodeURIComponent(`/app/${businessId}`)}`);
-  }
+  await requireTrustedDevice(profile, membership, `/app/${businessId}`);
   return membership;
-}
-
-async function assuranceLevel() {
-  const supabase = await createSupabaseServerClient();
-  const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-  return data?.currentLevel ?? null;
 }
 
 export async function listMyBusinesses(profile: Profile) {

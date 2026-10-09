@@ -28,7 +28,7 @@ import {
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
 import { PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
-import { inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
+import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -250,6 +250,18 @@ export async function inviteMemberAction(businessId: string, form: FormData) {
     }
   }
   revalidatePath(`/app/${businessId}/team`);
+  redirect(`/app/${businessId}/team?${outcome}`);
+}
+
+export async function forgetDevicesAction(businessId: string, memberId: string) {
+  await requireBusinessManager(businessId);
+  let outcome = "forgot=1";
+  try {
+    await forgetMemberDevices(businessId, memberId);
+  } catch (err) {
+    if (!(err instanceof TeamError)) throw err;
+    outcome = `error=${err.code}`;
+  }
   redirect(`/app/${businessId}/team?${outcome}`);
 }
 

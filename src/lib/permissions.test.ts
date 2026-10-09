@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { can, needsSecondFactor } from "./permissions";
+import { can, needsDeviceCode } from "./permissions";
 
 const doctor = { role: "doctor" as const, managesClinic: false };
 const assistant = { role: "assistant" as const, managesClinic: false };
@@ -21,12 +21,11 @@ describe("can", () => {
   });
 });
 
-describe("needsSecondFactor", () => {
-  it("is required for doctors only", () => {
-    expect(needsSecondFactor("doctor", "aal1")).toBe(true);
-    expect(needsSecondFactor("doctor", null)).toBe(true);
-    expect(needsSecondFactor("doctor", "aal2")).toBe(false);
-    expect(needsSecondFactor("assistant", "aal1")).toBe(false);
-    expect(needsSecondFactor("super_admin", "aal1")).toBe(false);
+describe("needsDeviceCode", () => {
+  it("asks doctors, clinic managers and Praxia staff, not other assistants", () => {
+    expect(needsDeviceCode(doctor)).toBe(true);
+    expect(needsDeviceCode({ ...assistant, managesClinic: true })).toBe(true);
+    expect(needsDeviceCode(superAdmin)).toBe(true);
+    expect(needsDeviceCode(assistant)).toBe(false);
   });
 });
