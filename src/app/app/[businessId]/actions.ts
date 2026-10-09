@@ -178,6 +178,7 @@ export async function saveGeneralAction(businessId: string, form: FormData) {
     updateBusinessSettings(businessId, {
       reminderLeadHours: int(form, "reminderLeadHours"),
       agentInstructions: str(form, "agentInstructions"),
+      reminderEndPolicy: form.get("reminderEndPolicy") === "auto_cancel" ? "auto_cancel" : "escalate",
     }),
   );
 }

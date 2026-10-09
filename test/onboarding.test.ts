@@ -124,6 +124,13 @@ describe("createBusiness", () => {
     expect(profile.email).toBe("duena@luna.mx");
     const members = await db.select().from(schema.businessMembers);
     expect(members).toMatchObject([{ businessId: business.id, userId: profile.id, role: "owner" }]);
+    // The default intake: date of birth, first visit or follow-up, and reason.
+    const intake = await db.select().from(schema.intakeFields).orderBy(schema.intakeFields.position);
+    expect(intake.map((f) => [f.key, f.type, f.required])).toEqual([
+      ["fecha_nacimiento", "date", true],
+      ["tipo_visita", "choice", true],
+      ["motivo", "text", true],
+    ]);
     // The owner is the clinic's first doctor.
     const practitioners = await db.select().from(schema.practitioners);
     expect(practitioners).toMatchObject([{ businessId: business.id, memberId: members[0].id, displayName: "duena@luna.mx", active: true }]);
@@ -175,9 +182,10 @@ describe("Kapso project webhook", () => {
 
     const templateCalls = kapso.calls.filter((c) => c.path.endsWith("/message_templates"));
     expect(templateCalls.map((c) => (c.body as { name: string }).name).sort()).toEqual([
-      "ikarus_cita_cancelada",
-      "ikarus_recordatorio",
-      "ikarus_seguimiento",
+      "praxia_cita_cancelada",
+      "praxia_recordatorio",
+      "praxia_seguimiento",
+      "praxia_seguimiento_aviso",
     ]);
     expect(templateCalls[0].path).toBe(`/meta/whatsapp/v24.0/${WABA_ID}/message_templates`);
     const templates = await db.select().from(schema.templates);
@@ -186,11 +194,11 @@ describe("Kapso project webhook", () => {
 
   it("records a template Meta refused", async () => {
     await newBusiness();
-    templateFailures.add("ikarus_seguimiento");
+    templateFailures.add("praxia_seguimiento");
     await onboarding.connectPhoneNumber({ phoneNumberId: PHONE_ID });
 
     const templates = await db.select().from(schema.templates);
-    const failed = templates.find((t) => t.name === "ikarus_seguimiento");
+    const failed = templates.find((t) => t.name === "praxia_seguimiento");
     expect(failed?.status).toBe("REJECTED");
     expect(failed?.rejectedReason).toContain("Invalid parameter");
   });

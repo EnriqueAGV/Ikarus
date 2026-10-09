@@ -9,7 +9,7 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
   const base = `/app/${business.id}`;
   const links = [
     { href: base, label: "Citas", exact: true },
-    { href: `${base}/clients`, label: "Clientes" },
+    { href: `${base}/clients`, label: "Pacientes" },
     ...(canManage(role)
       ? [
           { href: `${base}/settings`, label: "Ajustes" },

@@ -3,8 +3,8 @@ import { notFound } from "next/navigation";
 import { requireBusinessAccess } from "@/lib/auth";
 import { getClientDetail } from "@/lib/dashboard/appointments";
 import {
-  appointmentStatusLabel,
-  appointmentStatusTone,
+  appointmentLabel,
+  appointmentTone,
   formatLocal,
   formatPhone,
   settingsErrorLabel,
@@ -44,7 +44,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         <form action={setAgentPausedAction.bind(null, business.id, client.id, !client.agentPaused)}>
           {client.agentPaused ? (
             <div className="flex flex-col items-end gap-1">
-              <span className="text-sm text-amber-700 dark:text-amber-300">El asistente está en pausa con este cliente.</span>
+              <span className="text-sm text-amber-700 dark:text-amber-300">El asistente está en pausa con este paciente.</span>
               <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
                 Reactivar asistente
               </button>
@@ -59,7 +59,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         <section className="rounded-md border p-4">
           <h3 className="mb-3 font-medium">Datos</h3>
           {answers.length === 0 ? (
-            <p className="text-sm text-neutral-500">El negocio no pide datos adicionales.</p>
+            <p className="text-sm text-neutral-500">El consultorio no pide datos adicionales.</p>
           ) : (
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
               {answers.map((a) => (
@@ -83,8 +83,8 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                   <span>
                     <span className="capitalize">{formatLocal(a.startsAt, tz, "EEE d MMM yyyy, HH:mm")}</span> · {serviceName}
                   </span>
-                  <span className={`rounded px-2 py-0.5 text-xs ${appointmentStatusTone[a.status]}`}>
-                    {appointmentStatusLabel[a.status]}
+                  <span className={`rounded px-2 py-0.5 text-xs ${appointmentTone(a)}`}>
+                    {appointmentLabel(a)}
                   </span>
                 </li>
               ))}
@@ -117,9 +117,9 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         <form action={staffReplyAction.bind(null, business.id, client.id)} className="mt-4 flex flex-col gap-2">
           {error && <p className="text-sm text-red-600">{error}</p>}
           {sp.sent && <p className="text-sm text-emerald-700">Mensaje enviado. El asistente quedó en pausa.</p>}
-          <textarea name="text" rows={2} required placeholder="Responder como el negocio" className="rounded-md border px-3 py-2 text-sm" />
+          <textarea name="text" rows={2} required placeholder="Responder como el consultorio" className="rounded-md border px-3 py-2 text-sm" />
           <div className="flex items-center justify-between gap-2">
-            <p className="text-xs text-neutral-500">Al responder, el asistente se pausa con este cliente.</p>
+            <p className="text-xs text-neutral-500">Al responder, el asistente se pausa con este paciente.</p>
             <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
               Enviar por WhatsApp
             </button>

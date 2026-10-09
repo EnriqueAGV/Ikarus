@@ -52,6 +52,8 @@ export const appointmentStatus = pgEnum("appointment_status", [
   "completed",
   "no_show",
 ]);
+// What happens when a patient never answers the reminder and its follow-up.
+export const reminderEndPolicy = pgEnum("reminder_end_policy", ["escalate", "auto_cancel"]);
 export const messageDirection = pgEnum("message_direction", [
   "inbound",
   "outbound",
@@ -77,7 +79,7 @@ export const businesses = pgTable(
   {
     id: id(),
     name: text("name").notNull(),
-    timezone: text("timezone").notNull().default("America/Mexico_City"),
+    timezone: text("timezone").notNull().default("America/El_Salvador"),
     locale: text("locale").notNull().default("es"),
     status: businessStatus("status").notNull().default("invited"),
     kapsoCustomerId: text("kapso_customer_id").unique(),
@@ -86,6 +88,8 @@ export const businesses = pgTable(
     kapsoMessageWebhookId: text("kapso_message_webhook_id"),
     displayPhone: text("display_phone"),
     reminderLeadHours: smallint("reminder_lead_hours").notNull().default(24),
+    // escalate: the appointment stays booked and is flagged for the team to call.
+    reminderEndPolicy: reminderEndPolicy("reminder_end_policy").notNull().default("escalate"),
     agentInstructions: text("agent_instructions"),
     createdAt: createdAt(),
   },
@@ -249,6 +253,8 @@ export const appointments = pgTable(
     status: appointmentStatus("status").notNull().default("booked"),
     reminderSentAt: timestamp("reminder_sent_at", { withTimezone: true }),
     followupSentAt: timestamp("followup_sent_at", { withTimezone: true }),
+    // Set when the patient never answered and the clinic should call them.
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),

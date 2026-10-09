@@ -11,12 +11,12 @@ export default async function MyBusinessesPage() {
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
       <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Tus negocios</h1>
+        <h1 className="text-2xl font-semibold">Tus consultorios</h1>
         <SignOutButton />
       </header>
       {businesses.length === 0 ? (
         <p className="text-sm text-neutral-500">
-          Tu cuenta todavía no pertenece a ningún negocio.
+          Tu cuenta todavía no pertenece a ningún consultorio.
         </p>
       ) : (
         <ul className="divide-y rounded-md border">

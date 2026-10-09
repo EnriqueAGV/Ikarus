@@ -1,5 +1,5 @@
 import { runAgent } from "@/lib/agent/run";
-import { autoCancel, clientRepliedSince, planReminder, REPLY_WAIT, sendReminder } from "@/lib/reminders";
+import { clientRepliedSince, endUnanswered, planReminder, REPLY_WAIT, sendReminder } from "@/lib/reminders";
 import { inngest } from "./client";
 
 // One run per client at a time: messages arriving mid-reply queue behind it,
@@ -24,7 +24,7 @@ export type ReminderStep = {
   waitForEvent(id: string, opts: { event: string; timeout: string; match: string }): Promise<unknown | null>;
 };
 
-// Reminder, follow-up and auto-cancel for one appointment. A cancellation or
+// Reminder, follow-up, then escalation or auto-cancel for one appointment. A cancellation or
 // reschedule of the appointment stops the run (cancelOn below); a reply from
 // the client ends it at the next wait.
 export async function remindersFlow({ event, step }: { event: { data: unknown }; step: ReminderStep }) {
@@ -40,7 +40,7 @@ export async function remindersFlow({ event, step }: { event: { data: unknown };
     sent = await step.run("send-followup", () => sendReminder(appointmentId, "followup"));
     if (sent.status !== "sent") return sent;
     if (await waitedWithoutReply("second", sent.sentAt)) {
-      return step.run("auto-cancel", () => autoCancel(appointmentId));
+      return step.run("end-unanswered", () => endUnanswered(appointmentId));
     }
   }
   return { status: "replied" };

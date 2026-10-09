@@ -10,7 +10,7 @@ const montserrat = Montserrat({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL ?? "http://localhost:3000"),
   title: { default: "Praxia", template: "%s · Praxia" },
-  description: "Agenda por WhatsApp para tu negocio",
+  description: "Agenda médica por WhatsApp para tu consultorio",
   applicationName: "Praxia",
   openGraph: { siteName: "Praxia", type: "website" },
 };

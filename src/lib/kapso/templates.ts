@@ -1,13 +1,15 @@
-// WhatsApp templates Ikarus creates on every business's WABA once its number
+// WhatsApp templates Praxia creates on every clinic's WABA once its number
 // connects. Reminders go out after the 24h customer-service window closes,
-// so they must be pre-approved UTILITY templates.
+// so they must be pre-approved UTILITY templates. They carry the clinic, the
+// doctor and the time only, never the service or reason for the visit:
+// a lock screen notification should not reveal why someone sees a doctor.
 
 export const TEMPLATE_LANGUAGE = "es";
 
 const example = {
   nombre: "Ana",
-  servicio: "Corte de cabello",
-  negocio: "Estética Luna",
+  consultorio: "Consultorio Médico San Benito",
+  doctor: "Dra. Ana López",
   fecha: "viernes 10 de octubre",
   hora: "10:30",
 };
@@ -38,40 +40,55 @@ const appointmentButtons = {
 
 export const TEMPLATES = [
   {
-    name: "ikarus_recordatorio",
+    name: "praxia_recordatorio",
     language: TEMPLATE_LANGUAGE,
     category: "UTILITY",
     parameter_format: "NAMED",
     components: [
       body(
-        "Hola {{nombre}}, te recordamos tu cita de {{servicio}} en {{negocio}} el {{fecha}} a las {{hora}}. ¿Nos confirmas tu asistencia?",
-        ["nombre", "servicio", "negocio", "fecha", "hora"],
+        "Hola {{nombre}}, le recordamos su cita en {{consultorio}} con {{doctor}} el {{fecha}} a las {{hora}}. ¿Nos confirma su asistencia?",
+        ["nombre", "consultorio", "doctor", "fecha", "hora"],
+      ),
+      appointmentButtons,
+    ],
+  },
+  // Follow-up for clinics that escalate: no cancellation warning.
+  {
+    name: "praxia_seguimiento",
+    language: TEMPLATE_LANGUAGE,
+    category: "UTILITY",
+    parameter_format: "NAMED",
+    components: [
+      body(
+        "Hola {{nombre}}, aún no recibimos su confirmación para su cita en {{consultorio}} con {{doctor}} el {{fecha}} a las {{hora}}. ¿Nos confirma su asistencia?",
+        ["nombre", "consultorio", "doctor", "fecha", "hora"],
+      ),
+      appointmentButtons,
+    ],
+  },
+  // Follow-up for clinics that auto-cancel: warns before cancelling.
+  {
+    name: "praxia_seguimiento_aviso",
+    language: TEMPLATE_LANGUAGE,
+    category: "UTILITY",
+    parameter_format: "NAMED",
+    components: [
+      body(
+        "Hola {{nombre}}, aún no recibimos su confirmación para su cita en {{consultorio}} con {{doctor}} el {{fecha}} a las {{hora}}. Si no la confirma en las próximas 2 horas, la cita se cancelará.",
+        ["nombre", "consultorio", "doctor", "fecha", "hora"],
       ),
       appointmentButtons,
     ],
   },
   {
-    name: "ikarus_seguimiento",
+    name: "praxia_cita_cancelada",
     language: TEMPLATE_LANGUAGE,
     category: "UTILITY",
     parameter_format: "NAMED",
     components: [
       body(
-        "Hola {{nombre}}, aún no recibimos tu confirmación para tu cita de {{servicio}} el {{fecha}} a las {{hora}}. Si no la confirmas en las próximas 2 horas, la cita se cancelará.",
-        ["nombre", "servicio", "fecha", "hora"],
-      ),
-      appointmentButtons,
-    ],
-  },
-  {
-    name: "ikarus_cita_cancelada",
-    language: TEMPLATE_LANGUAGE,
-    category: "UTILITY",
-    parameter_format: "NAMED",
-    components: [
-      body(
-        "Hola {{nombre}}, cancelamos tu cita de {{servicio}} del {{fecha}} a las {{hora}} porque no recibimos tu confirmación. Escríbenos cuando quieras agendar de nuevo.",
-        ["nombre", "servicio", "fecha", "hora"],
+        "Hola {{nombre}}, cancelamos su cita en {{consultorio}} del {{fecha}} a las {{hora}} porque no recibimos su confirmación. Escríbanos cuando quiera agendar de nuevo.",
+        ["nombre", "consultorio", "fecha", "hora"],
       ),
       {
         type: "BUTTONS",

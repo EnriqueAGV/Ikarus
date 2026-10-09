@@ -283,6 +283,29 @@ describe("booking agent", () => {
     expect(appt).toMatchObject({ practitionerId: secondId, status: "booked" });
   });
 
+  it("answers an emergency with the fixed reply and hands off, without the LLM", async () => {
+    await receive("Buenas, mi papá tiene dolor de pecho y le cuesta respirar");
+    const client = await theClient();
+    const claude = fakeLlm([{ text: "no debería llamarse" }]);
+    // Message times come from the database clock here, so the run uses it too.
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: new Date(), llm: claude.client })).toEqual({
+      status: "emergency",
+      replied: true,
+    });
+    expect(claude.requests).toHaveLength(0);
+    expect(await theClient()).toMatchObject({ agentPaused: true });
+    const send = kapso.calls.find((c) => c.path.endsWith("/messages"));
+    expect(send?.body).toMatchObject({ text: { body: expect.stringContaining("911") } });
+
+    // A paused patient still gets it, but not again within half an hour.
+    await receive("Sigue igual, se desmayó");
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: new Date(Date.now() + 60_000), llm: claude.client })).toEqual({
+      status: "emergency",
+      replied: false,
+    });
+    expect(kapso.calls.filter((c) => c.path.endsWith("/messages"))).toHaveLength(1);
+  });
+
   it("only cancels the client's own appointments", async () => {
     await receive("Cancela la cita");
     const client = await theClient();
