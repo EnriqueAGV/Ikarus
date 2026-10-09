@@ -20,8 +20,10 @@ const schema = z.object({
   KAPSO_API_BASE_URL: z.string().url().default("https://api.kapso.ai"),
   KAPSO_PROJECT_WEBHOOK_SECRET: z.string().min(1).optional(),
   KAPSO_MESSAGE_WEBHOOK_SECRET: z.string().min(1).optional(),
-  ANTHROPIC_API_KEY: z.string().min(1).optional(),
-  AGENT_MODEL: z.string().default("claude-opus-5-5"),
+  // Any OpenAI-compatible Chat Completions endpoint; the model must support tool calls.
+  LLM_BASE_URL: z.string().url().default("https://api.openai.com/v1"),
+  LLM_API_KEY: z.string().min(1).optional(),
+  LLM_MODEL: z.string().min(1).optional(),
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
 });

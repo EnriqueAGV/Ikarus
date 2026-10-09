@@ -2,7 +2,7 @@
 
 Agenda por WhatsApp para negocios: un agente atiende a los clientes, recoge sus datos y les reserva un horario. Los recordatorios, el seguimiento a las 2 horas y la cancelación automática a las 4 horas corren solos.
 
-Built on Next.js 16, Postgres (Supabase), Drizzle, Inngest, Claude and Kapso. The full plan lives in the "Ikarus MVP plan" doc.
+Built on Next.js 16, Postgres (Supabase), Drizzle, Inngest, Kapso and any OpenAI-compatible LLM endpoint. The full plan lives in the "Ikarus MVP plan" doc.
 
 ## Local setup
 
@@ -54,14 +54,14 @@ Owners and staff sign in at `/login` and land on `/app/<business>`:
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |
 | `src/lib/booking/` | Free-slot engine and booking, cancel, reschedule |
-| `src/lib/agent/` | The WhatsApp booking agent (Claude + tools) |
+| `src/lib/agent/` | The WhatsApp booking agent (LLM + tools, `src/lib/agent/llm.ts` is the endpoint client) |
 | `src/lib/dashboard/` | Settings, calendar queries and team management behind the dashboard |
 | `src/app/app/[businessId]/` | Dashboard pages and their server actions |
 | `src/inngest/` | Background work: agent replies, reminder flows |
 
 ## How a client message is answered
 
-Kapso posts the message to `/api/webhooks/kapso/messages`. Ikarus stores it (creating the client on first contact) and sends an Inngest event. The `agent-reply` function runs one conversation at a time per client: it loads the business's services, opening hours, intake questions and the last 30 messages, and lets Claude answer using the tools in `src/lib/agent/tools.ts`. Bookings only happen through those tools, which re-check the calendar inside a transaction; the database's exclusion constraint is the last guard against double booking.
+Kapso posts the message to `/api/webhooks/kapso/messages`. Ikarus stores it (creating the client on first contact) and sends an Inngest event. The `agent-reply` function runs one conversation at a time per client: it loads the business's services, opening hours, intake questions and the last 30 messages, and lets the model set in `LLM_MODEL` (served at `LLM_BASE_URL`) answer using the tools in `src/lib/agent/tools.ts`. Bookings only happen through those tools, which re-check the calendar inside a transaction; the database's exclusion constraint is the last guard against double booking.
 
 ## Checks
 

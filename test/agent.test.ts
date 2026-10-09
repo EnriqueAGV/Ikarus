@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
-import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { startFakeKapso } from "./fake-kapso";
+import type { ChatClient, ChatRequest } from "@/lib/agent/llm";
 
 const sent = vi.hoisted(() => [] as { name: string; data: unknown }[]);
 vi.mock("@/inngest/client", () => ({
@@ -31,29 +31,35 @@ const CLIENT_PHONE = "5215511112222";
 
 type Step = { tools?: { name: string; input: unknown }[]; text?: string };
 
-// Scripted stand-in for the Messages API: returns the next step on each call
-// and records every request.
-function fakeClaude(steps: Step[]) {
-  const requests: Anthropic.Beta.MessageCreateParamsNonStreaming[] = [];
+// Scripted stand-in for an OpenAI-compatible endpoint: returns the next step
+// on each call and records every request.
+function fakeLlm(steps: Step[]) {
+  const requests: ChatRequest[] = [];
   let i = 0;
-  const create = async (params: Anthropic.Beta.MessageCreateParamsNonStreaming) => {
-    requests.push(structuredClone(params));
+  const complete = async (req: ChatRequest) => {
+    requests.push(structuredClone(req));
     const step = steps[i++] ?? { text: "(sin guion)" };
-    const content = [
-      ...(step.text ? [{ type: "text", text: step.text }] : []),
-      ...(step.tools ?? []).map((t, n) => ({ type: "tool_use", id: `tu_${i}_${n}`, name: t.name, input: t.input })),
-    ];
-    return { content, stop_reason: step.tools?.length ? "tool_use" : "end_turn" };
+    const tool_calls = (step.tools ?? []).map((t, n) => ({
+      id: `call_${i}_${n}`,
+      type: "function" as const,
+      function: { name: t.name, arguments: JSON.stringify(t.input) },
+    }));
+    return {
+      message: { content: step.text ?? null, ...(tool_calls.length ? { tool_calls } : {}) },
+      finishReason: tool_calls.length ? "tool_calls" : "stop",
+    };
   };
-  return { client: { beta: { messages: { create } } } as unknown as Pick<Anthropic, "beta">, requests };
+  return { client: { complete } satisfies ChatClient, requests };
 }
 
-function lastToolResults(req: Anthropic.Beta.MessageCreateParamsNonStreaming) {
-  const last = req.messages.at(-1)!;
-  return (last.content as Anthropic.Beta.BetaToolResultBlockParam[]).map((r) => ({
-    error: r.is_error ?? false,
-    content: JSON.parse(JSON.stringify(r.content)),
-  }));
+// Results of the last batch of tool calls, the trailing "tool" messages.
+function lastToolResults(req: ChatRequest) {
+  const results: { error: boolean; content: string }[] = [];
+  for (let k = req.messages.length - 1; k >= 0 && req.messages[k].role === "tool"; k--) {
+    const content = String(req.messages[k].content);
+    results.unshift({ error: content.startsWith("Error: "), content: content.replace(/^Error: /, "") });
+  }
+  return results;
 }
 
 let business: typeof schema.businesses.$inferSelect;
@@ -130,7 +136,7 @@ describe("booking agent", () => {
   it("collects intake, books a free slot and replies on WhatsApp", async () => {
     await receive("Hola, soy Ana López, quiero un corte mañana a las 10");
     const client = await theClient();
-    const claude = fakeClaude([
+    const claude = fakeLlm([
       {
         tools: [
           { name: "save_client_info", input: { name: "Ana López", answers: [] } },
@@ -144,7 +150,7 @@ describe("booking agent", () => {
       { text: "¡Listo, Ana! Te esperamos el martes 13 de octubre a las 10:00." },
     ]);
 
-    const result = await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client });
+    const result = await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
     expect(result).toEqual({ status: "replied", reply: "¡Listo, Ana! Te esperamos el martes 13 de octubre a las 10:00." });
 
     // Slots offered are real local times.
@@ -165,12 +171,13 @@ describe("booking agent", () => {
     expect(send?.path).toBe(`/meta/whatsapp/v24.0/${PHONE_ID}/messages`);
     expect(send?.body).toMatchObject({ to: CLIENT_PHONE, type: "text", text: { body: result.status === "replied" ? result.reply : "" } });
 
-    // Request shape: Spanish system prompt on a cached block, history from WhatsApp.
+    // Request shape: configured model, Spanish system prompt, history from WhatsApp.
     const req = claude.requests[0];
-    expect(req.model).toBe("claude-opus-5-5");
-    expect(req.fallbacks).toBe("default");
-    expect(JSON.stringify(req.system)).toContain("Always reply in Spanish");
-    expect(req.messages[0]).toEqual({ role: "user", content: "Hola, soy Ana López, quiero un corte mañana a las 10" });
+    expect(req.model).toBe("test-model");
+    expect(req.tools.map((t) => t.function.name)).toContain("book_appointment");
+    expect(req.messages[0]).toMatchObject({ role: "system" });
+    expect(String(req.messages[0].content)).toContain("Always reply in Spanish");
+    expect(req.messages[1]).toEqual({ role: "user", content: "Hola, soy Ana López, quiero un corte mañana a las 10" });
     const out = await db.select().from(schema.messages).where(eq(schema.messages.direction, "outbound"));
     expect(out).toHaveLength(1);
   });
@@ -186,7 +193,7 @@ describe("booking agent", () => {
       startsAt: new Date("2026-10-13T16:30:00Z"),
       endsAt: new Date("2026-10-13T17:30:00Z"),
     });
-    const claude = fakeClaude([
+    const claude = fakeLlm([
       {
         tools: [
           { name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00" } },
@@ -195,7 +202,7 @@ describe("booking agent", () => {
       },
       { text: "Esa hora ya no está disponible." },
     ]);
-    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client });
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
     const results = lastToolResults(claude.requests[1]);
     expect(results.every((r) => r.error && String(r.content).includes("not available"))).toBe(true);
     expect(await db.select().from(schema.appointments)).toHaveLength(1);
@@ -217,13 +224,13 @@ describe("booking agent", () => {
       endsAt: new Date("2026-10-14T17:00:00Z"),
     });
 
-    const claude = fakeClaude([
+    const claude = fakeLlm([
       { tools: [{ name: "reschedule_appointment", input: { appointment_id: mine.id, new_start: "2026-10-14T10:00" } }] },
       // Moving into its own slot's neighbourhood works: the old slot is released first.
       { tools: [{ name: "reschedule_appointment", input: { appointment_id: mine.id, new_start: "2026-10-13T10:30" } }] },
       { text: "Listo, quedó a las 10:30." },
     ]);
-    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client });
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
 
     expect(lastToolResults(claude.requests[1])[0].error).toBe(true);
     expect(lastToolResults(claude.requests[2])[0].error).toBe(false);
@@ -243,11 +250,11 @@ describe("booking agent", () => {
       .insert(schema.appointments)
       .values({ businessId: business.id, clientId: other.id, serviceId, startsAt: new Date("2026-10-13T16:00:00Z"), endsAt: new Date("2026-10-13T17:00:00Z") })
       .returning();
-    const claude = fakeClaude([
+    const claude = fakeLlm([
       { tools: [{ name: "cancel_appointment", input: { appointment_id: theirs.id } }] },
       { text: "No encuentro esa cita." },
     ]);
-    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client });
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
     expect(lastToolResults(claude.requests[1])[0].error).toBe(true);
     const [row] = await db.select().from(schema.appointments).where(eq(schema.appointments.id, theirs.id));
     expect(row.status).toBe("booked");
@@ -256,18 +263,18 @@ describe("booking agent", () => {
   it("stops answering after a handoff, and skips messages already answered", async () => {
     await receive("Quiero hablar con una persona");
     const client = await theClient();
-    const claude = fakeClaude([
+    const claude = fakeLlm([
       { tools: [{ name: "handoff_to_business", input: { reason: "pide un humano" } }] },
       { text: "Claro, alguien del equipo te escribe en breve." },
     ]);
-    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client });
-    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client })).toEqual({
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client })).toEqual({
       status: "skipped",
       reason: "paused",
     });
 
     await db.update(schema.clients).set({ agentPaused: false });
-    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, anthropic: claude.client })).toEqual({
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client })).toEqual({
       status: "skipped",
       reason: "already_answered",
     });
