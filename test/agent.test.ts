@@ -22,7 +22,7 @@ process.env.KAPSO_API_BASE_URL = kapso.url;
 
 const { db, schema } = await import("@/db");
 const { eq, sql } = await import("drizzle-orm");
-const { runAgent } = await import("@/lib/agent/run");
+const { apologizeAndHandOff, runAgent } = await import("@/lib/agent/run");
 const { NOTICE_VERSION } = await import("@/lib/agent/consent");
 const { createPractitioner } = await import("@/lib/booking/practitioners");
 const messagesRoute = await import("@/app/api/webhooks/kapso/messages/route");
@@ -388,6 +388,19 @@ describe("booking agent", () => {
       status: "skipped",
       reason: "already_answered",
     });
+  });
+});
+
+describe("when the agent can't answer", () => {
+  it("sends the holding reply once and hands the conversation to the team", async () => {
+    await receive("Si");
+    const client = await theClient();
+    await apologizeAndHandOff(business.id, client.id);
+    await apologizeAndHandOff(business.id, client.id);
+    const sends = kapso.calls.filter((c) => c.path.endsWith("/messages") && !isTyping(c.body));
+    expect(sends).toHaveLength(1);
+    expect(sends[0].body).toMatchObject({ to: CLIENT_PHONE, text: { body: "Gracias por su mensaje. En un momento alguien del consultorio le responde." } });
+    expect((await theClient()).agentPaused).toBe(true);
   });
 });
 
