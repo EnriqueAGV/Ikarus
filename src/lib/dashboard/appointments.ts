@@ -102,7 +102,7 @@ export async function updateAppointmentByBusiness(
     try {
       await inngest.send({
         name: "appointment/cancelled",
-        data: { appointmentId: row.id, businessId: row.businessId },
+        data: { appointmentId: row.id, businessId: row.businessId, clientId: row.clientId },
       });
     } catch (err) {
       console.error("inngest.send appointment/cancelled failed", err);

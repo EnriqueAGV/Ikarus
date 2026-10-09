@@ -16,7 +16,7 @@ type Param = keyof typeof example;
 
 function body(text: string, params: Param[]) {
   return {
-    type: "BODY",
+    type: "BODY" as const,
     text,
     example: {
       body_text_named_params: params.map((p) => ({

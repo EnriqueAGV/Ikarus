@@ -30,6 +30,10 @@ After the first deploy:
 
 `/admin/new` creates the business, its Kapso customer, the owner's account and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
 
+## Reminders
+
+Every booking starts the `appointment-reminders` Inngest function. At the business's lead time before the appointment (24 hours by default) it sends the `ikarus_recordatorio` template with Confirmar, Reprogramar and Cancelar buttons. With no reply after 2 hours it sends `ikarus_seguimiento`; with no reply 2 hours after that it cancels the appointment and sends `ikarus_cita_cancelada`. Any message from the client stops the flow, and tapping Confirmar marks the appointment confirmed. Cancelling or rescheduling stops it too. Bookings made inside the lead time get no reminder, and nothing is sent until Meta has approved the template.
+
 ## The business dashboard
 
 Owners and staff sign in at `/login` and land on `/app/<business>`:

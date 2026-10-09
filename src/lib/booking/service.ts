@@ -234,7 +234,7 @@ export function describeSlot(instant: Date, timezone: string) {
 
 async function emit(name: "appointment/booked" | "appointment/cancelled", a: Appointment) {
   try {
-    await inngest.send({ name, data: { appointmentId: a.id, businessId: a.businessId } });
+    await inngest.send({ name, data: { appointmentId: a.id, businessId: a.businessId, clientId: a.clientId } });
   } catch (err) {
     // Reminders are scheduled from these events; a failed send must not undo a booking.
     console.error(`inngest.send ${name} failed`, err);

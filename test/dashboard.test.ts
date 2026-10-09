@@ -150,7 +150,7 @@ describe("appointments from the dashboard", () => {
     sent.length = 0;
     const cancelled = await dashboard.updateAppointmentByBusiness(business.id, appointment.id, "cancel", NOW);
     expect(cancelled).toMatchObject({ status: "cancelled_by_business", cancelReason: "business" });
-    expect(sent).toEqual([{ name: "appointment/cancelled", data: { appointmentId: appointment.id, businessId: business.id } }]);
+    expect(sent).toEqual([{ name: "appointment/cancelled", data: { appointmentId: appointment.id, businessId: business.id, clientId } }]);
     const again = await bookAppointment({ business, clientId, serviceId: service.id, localStart: "2026-10-12T11:00", now: NOW });
     expect(again.ok).toBe(true);
   });

@@ -162,3 +162,36 @@ export function sendText(phoneNumberId: string, to: string, body: string) {
     { messaging_product: "whatsapp", to, type: "text", text: { body } },
   ).then((r) => r.messages?.[0]?.id ?? null);
 }
+
+export type TemplateSend = {
+  name: string;
+  language: string;
+  params: Record<string, string>;
+  // One payload per quick-reply button, in order; it comes back when tapped.
+  buttonPayloads?: string[];
+};
+
+export function sendTemplate(phoneNumberId: string, to: string, t: TemplateSend) {
+  const components: unknown[] = [
+    {
+      type: "body",
+      parameters: Object.entries(t.params).map(([name, text]) => ({ type: "text", parameter_name: name, text })),
+    },
+    ...(t.buttonPayloads ?? []).map((payload, index) => ({
+      type: "button",
+      sub_type: "quick_reply",
+      index: String(index),
+      parameters: [{ type: "payload", payload }],
+    })),
+  ];
+  return kapso<{ messages?: { id: string }[] }>(
+    "POST",
+    `/meta/whatsapp/${GRAPH_VERSION}/${phoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: { name: t.name, language: { code: t.language }, components },
+    },
+  ).then((r) => r.messages?.[0]?.id ?? null);
+}
