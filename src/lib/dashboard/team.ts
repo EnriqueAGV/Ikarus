@@ -17,16 +17,16 @@ export async function listMembers(businessId: string) {
     .orderBy(asc(schema.businessMembers.role), asc(schema.profiles.email));
 }
 
-// Creates the account if needed; the person then signs in with a magic link
-// from the login page using this email.
+// Creates the account if needed, which emails the person an invitation;
+// someone who already has an account signs in from the login page as usual.
 export async function inviteMember(businessId: string, email: string, role: "owner" | "staff") {
-  const userId = await ensureUser(email);
+  const user = await ensureUser(email);
   const [row] = await db
     .insert(schema.businessMembers)
-    .values({ businessId, userId, role })
+    .values({ businessId, userId: user.id, role })
     .onConflictDoNothing()
     .returning();
-  return { added: Boolean(row) };
+  return { added: Boolean(row), emailed: user.invited };
 }
 
 export class TeamError extends Error {

@@ -6,7 +6,7 @@ vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({
     auth: {
       admin: {
-        createUser: async ({ email }: { email: string }) => ({
+        inviteUserByEmail: async (email: string) => ({
           data: { user: { id: "11111111-1111-4111-8111-111111111111", email } },
           error: null,
         }),

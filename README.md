@@ -28,7 +28,7 @@ After the first deploy:
 
 ## Onboarding a business
 
-`/admin/new` creates the business, its Kapso customer, the owner's account and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
+`/admin/new` creates the business, its Kapso customer, the owner's account (Supabase emails them an invitation that opens their dashboard through `/auth/invite`) and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
 
 ## Reminders
 
