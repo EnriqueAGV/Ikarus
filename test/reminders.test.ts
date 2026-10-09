@@ -36,6 +36,7 @@ const CLIENT_PHONE = "5215511112222";
 let business: typeof schema.businesses.$inferSelect;
 let clientId: string;
 let serviceId: string;
+let practitionerId: string;
 
 beforeEach(async () => {
   failSends = false;
@@ -57,6 +58,10 @@ beforeEach(async () => {
     .insert(schema.services)
     .values({ businessId: business.id, name: "Corte de cabello", durationMin: 60 })
     .returning();
+  [{ id: practitionerId }] = await db
+    .insert(schema.practitioners)
+    .values({ businessId: business.id, displayName: "Dra. Ana Ruiz" })
+    .returning();
   await db.insert(schema.templates).values(
     ["ikarus_recordatorio", "ikarus_seguimiento", "ikarus_cita_cancelada"].map((name) => ({
       businessId: business.id,
@@ -76,6 +81,7 @@ async function appointment(startsAt = STARTS_AT, createdAt = BOOKED_AT) {
       businessId: business.id,
       clientId,
       serviceId,
+      practitionerId,
       startsAt,
       endsAt: new Date(startsAt.getTime() + 3600_000),
       createdAt,

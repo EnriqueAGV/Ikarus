@@ -34,6 +34,8 @@ export const settingsErrorLabel: Record<string, string> = {
   invalid_weekday: "Día no válido.",
   invalid_date: "Fecha no válida.",
   name_required: "El servicio necesita un nombre.",
+  doctor_name_required: "El doctor necesita un nombre.",
+  unknown_practitioner: "Ese doctor no existe en este consultorio.",
   invalid_duration: "La duración debe estar entre 5 y 720 minutos.",
   invalid_buffer: "El margen debe estar entre 0 y 240 minutos.",
   label_required: "La pregunta necesita un texto.",

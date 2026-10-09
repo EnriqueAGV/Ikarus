@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lt, lte } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { formatInTimeZone } from "date-fns-tz";
@@ -6,6 +6,7 @@ import { db, schema } from "@/db";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { findSlots, fromLocalString, toLocalString } from "./availability";
+import { practitionersOffering } from "./practitioners";
 
 type Business = typeof schema.businesses.$inferSelect;
 type Appointment = typeof schema.appointments.$inferSelect;
@@ -36,33 +37,60 @@ async function getService(businessId: string, serviceId: string, exec: Executor 
   return service ?? null;
 }
 
-// Free start times for a service between two local dates (inclusive).
-export async function availableSlots(
-  business: Business,
-  serviceId: string,
-  fromDate: string,
-  toDate: string,
-  now = new Date(),
-  exec: Executor = db,
-) {
-  const service = await getService(business.id, serviceId, exec);
+export type Slot = { startsAt: Date; practitionerId: string; practitionerName: string; durationMin: number };
+
+export type SlotQuery = {
+  serviceId: string;
+  // Local dates, inclusive, as YYYY-MM-DD.
+  fromDate: string;
+  toDate: string;
+  // One doctor's calendar, or every active doctor who offers the service.
+  practitionerId?: string | null;
+  now?: Date;
+};
+
+// Free start times for a service between two local dates (inclusive). Across
+// several doctors, each time appears once, with the first free doctor in the
+// clinic's order. Null when the service does not exist.
+export async function availableSlots(business: Business, q: SlotQuery, exec: Executor = db): Promise<Slot[] | null> {
+  const service = await getService(business.id, q.serviceId, exec);
   if (!service) return null;
+  const offering = await practitionersOffering(business.id, service.id, q.practitionerId ?? undefined, exec);
+  if (!offering.length) return [];
+  const ids = offering.map((o) => o.practitioner.id);
 
   // Busy window: a day before and after the local range covers any timezone.
-  const rangeStart = addDays(new Date(`${fromDate}T00:00:00Z`), -1);
-  const rangeEnd = addDays(new Date(`${toDate}T00:00:00Z`), 2);
+  const rangeStart = addDays(new Date(`${q.fromDate}T00:00:00Z`), -1);
+  const rangeEnd = addDays(new Date(`${q.toDate}T00:00:00Z`), 2);
   const [rules, exceptions, busy] = await Promise.all([
-    exec.select().from(schema.availabilityRules).where(eq(schema.availabilityRules.businessId, business.id)),
+    exec
+      .select()
+      .from(schema.availabilityRules)
+      .where(
+        and(eq(schema.availabilityRules.businessId, business.id), inArray(schema.availabilityRules.practitionerId, ids)),
+      ),
     exec
       .select()
       .from(schema.availabilityExceptions)
-      .where(eq(schema.availabilityExceptions.businessId, business.id)),
+      .where(
+        and(
+          eq(schema.availabilityExceptions.businessId, business.id),
+          inArray(schema.availabilityExceptions.practitionerId, ids),
+          gte(schema.availabilityExceptions.date, q.fromDate),
+          lte(schema.availabilityExceptions.date, q.toDate),
+        ),
+      ),
     exec
-      .select({ startsAt: schema.appointments.startsAt, endsAt: schema.appointments.endsAt })
+      .select({
+        practitionerId: schema.appointments.practitionerId,
+        startsAt: schema.appointments.startsAt,
+        endsAt: schema.appointments.endsAt,
+      })
       .from(schema.appointments)
       .where(
         and(
           eq(schema.appointments.businessId, business.id),
+          inArray(schema.appointments.practitionerId, ids),
           inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
           lt(schema.appointments.startsAt, rangeEnd),
           gt(schema.appointments.endsAt, rangeStart),
@@ -70,52 +98,77 @@ export async function availableSlots(
       ),
   ]);
 
-  return findSlots({
-    timezone: business.timezone,
-    rules,
-    exceptions,
-    busy,
-    durationMin: service.durationMin,
-    bufferMin: service.bufferMin,
-    fromDate,
-    toDate,
-    now,
-  });
+  const byTime = new Map<number, Slot>();
+  for (const { practitioner, durationMin, bufferMin } of offering) {
+    const mine = <T extends { practitionerId: string }>(rows: T[]) => rows.filter((r) => r.practitionerId === practitioner.id);
+    const starts = findSlots({
+      timezone: business.timezone,
+      rules: mine(rules),
+      exceptions: mine(exceptions),
+      busy: mine(busy),
+      durationMin,
+      bufferMin,
+      fromDate: q.fromDate,
+      toDate: q.toDate,
+      now: q.now ?? new Date(),
+    });
+    for (const startsAt of starts) {
+      if (!byTime.has(startsAt.getTime())) {
+        byTime.set(startsAt.getTime(), {
+          startsAt,
+          practitionerId: practitioner.id,
+          practitionerName: practitioner.displayName,
+          durationMin,
+        });
+      }
+    }
+  }
+  return [...byTime.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
 export type BookResult =
   | { ok: true; appointment: Appointment }
-  | { ok: false; reason: "unknown_service" | "invalid_time" | "slot_unavailable" | "not_found" };
+  | {
+      ok: false;
+      reason: "unknown_service" | "unknown_practitioner" | "invalid_time" | "slot_unavailable" | "not_found";
+    };
 
-export async function bookAppointment(input: {
+type BookInput = {
   business: Business;
   clientId: string;
   serviceId: string;
   localStart: string;
+  // Omitted: any doctor who offers the service and is free then.
+  practitionerId?: string | null;
   now?: Date;
-}): Promise<BookResult> {
+};
+
+export async function bookAppointment(input: BookInput): Promise<BookResult> {
   const result = await db.transaction((tx) => bookInTx(tx, input));
   if (result.ok) await emit("appointment/booked", result.appointment);
   return result;
 }
 
-async function bookInTx(
-  tx: Tx,
-  input: { business: Business; clientId: string; serviceId: string; localStart: string; now?: Date },
-  rescheduledFromId?: string,
-): Promise<BookResult> {
+async function bookInTx(tx: Tx, input: BookInput, rescheduledFromId?: string): Promise<BookResult> {
   const { business } = input;
   const service = await getService(business.id, input.serviceId, tx);
   if (!service) return { ok: false, reason: "unknown_service" };
+  if (input.practitionerId) {
+    const offers = await practitionersOffering(business.id, service.id, input.practitionerId, tx);
+    if (!offers.length) return { ok: false, reason: "unknown_practitioner" };
+  }
   const startsAt = fromLocalString(input.localStart, business.timezone);
   if (!startsAt) return { ok: false, reason: "invalid_time" };
 
   // Only times the calendar actually offers can be booked.
   const date = input.localStart.slice(0, 10);
-  const free = await availableSlots(business, service.id, date, date, input.now, tx);
-  if (!free?.some((s) => s.getTime() === startsAt.getTime())) {
-    return { ok: false, reason: "slot_unavailable" };
-  }
+  const free = await availableSlots(
+    business,
+    { serviceId: service.id, fromDate: date, toDate: date, practitionerId: input.practitionerId, now: input.now },
+    tx,
+  );
+  const slot = free?.find((s) => s.startsAt.getTime() === startsAt.getTime());
+  if (!slot) return { ok: false, reason: "slot_unavailable" };
 
   try {
     const [appointment] = await tx
@@ -124,8 +177,9 @@ async function bookInTx(
         businessId: business.id,
         clientId: input.clientId,
         serviceId: service.id,
+        practitionerId: slot.practitionerId,
         startsAt,
-        endsAt: new Date(startsAt.getTime() + service.durationMin * 60_000),
+        endsAt: new Date(startsAt.getTime() + slot.durationMin * 60_000),
         rescheduledFromId,
       })
       .returning();
@@ -138,9 +192,14 @@ async function bookInTx(
 
 export async function upcomingAppointments(businessId: string, clientId: string, now = new Date()) {
   return db
-    .select({ appointment: schema.appointments, serviceName: schema.services.name })
+    .select({
+      appointment: schema.appointments,
+      serviceName: schema.services.name,
+      practitionerName: schema.practitioners.displayName,
+    })
     .from(schema.appointments)
     .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
+    .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
     .where(
       and(
         eq(schema.appointments.businessId, businessId),
@@ -184,12 +243,14 @@ export async function cancelByClient(businessId: string, clientId: string, appoi
 }
 
 // The old slot is released and the new one booked in one transaction: if the
-// new time is taken, the client keeps the original appointment.
+// new time is taken, the client keeps the original appointment. The doctor
+// stays the same unless another one is given.
 export async function rescheduleByClient(input: {
   business: Business;
   clientId: string;
   appointmentId: string;
   localStart: string;
+  practitionerId?: string | null;
   now?: Date;
 }): Promise<BookResult> {
   let old: Appointment | null = null;
@@ -202,7 +263,11 @@ export async function rescheduleByClient(input: {
         .update(schema.appointments)
         .set({ status: "cancelled_by_client", cancelledAt: new Date(), cancelReason: "rescheduled" })
         .where(eq(schema.appointments.id, old.id));
-      const booked = await bookInTx(tx, { ...input, serviceId: old.serviceId }, old.id);
+      const booked = await bookInTx(
+        tx,
+        { ...input, serviceId: old.serviceId, practitionerId: input.practitionerId || old.practitionerId },
+        old.id,
+      );
       if (!booked.ok) throw new KeepOriginal(booked);
       return booked;
     });

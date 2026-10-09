@@ -6,6 +6,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   smallint,
   text,
   time,
@@ -104,6 +105,25 @@ export const businessMembers = pgTable(
   (t) => [uniqueIndex("business_members_unique").on(t.businessId, t.userId)],
 );
 
+// A doctor with a calendar. Every schedule and appointment belongs to one, so a
+// clinic with several doctors needs no migration; a solo practice has one row.
+// member_id links the doctor's login, if they have one.
+export const practitioners = pgTable(
+  "practitioners",
+  {
+    id: id(),
+    businessId: businessId(),
+    memberId: uuid("member_id").references(() => businessMembers.id, { onDelete: "set null" }),
+    displayName: text("display_name").notNull(),
+    specialty: text("specialty"),
+    jvpmNumber: text("jvpm_number"),
+    color: text("color"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("practitioners_business").on(t.businessId)],
+);
+
 export const setupLinks = pgTable("setup_links", {
   id: id(),
   businessId: businessId(),
@@ -126,31 +146,55 @@ export const services = pgTable("services", {
   createdAt: createdAt(),
 });
 
-// Weekly opening hours, in the business's timezone. weekday: 0 = Sunday.
+const practitionerId = () =>
+  uuid("practitioner_id")
+    .notNull()
+    .references(() => practitioners.id, { onDelete: "cascade" });
+
+// Which doctor offers which service, with an optional per-doctor duration.
+export const practitionerServices = pgTable(
+  "practitioner_services",
+  {
+    businessId: businessId(),
+    practitionerId: practitionerId(),
+    serviceId: uuid("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    durationMin: integer("duration_min"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.practitionerId, t.serviceId] }),
+    index("practitioner_services_service").on(t.serviceId),
+  ],
+);
+
+// A doctor's weekly hours, in the business's timezone. weekday: 0 = Sunday.
 export const availabilityRules = pgTable(
   "availability_rules",
   {
     id: id(),
     businessId: businessId(),
+    practitionerId: practitionerId(),
     weekday: smallint("weekday").notNull(),
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
   },
-  (t) => [index("availability_rules_business").on(t.businessId, t.weekday)],
+  (t) => [index("availability_rules_practitioner").on(t.practitionerId, t.weekday)],
 );
 
-// A closed day (no times) or custom hours for one date.
+// A day off (no times) or custom hours for one doctor on one date.
 export const availabilityExceptions = pgTable(
   "availability_exceptions",
   {
     id: id(),
     businessId: businessId(),
+    practitionerId: practitionerId(),
     date: date("date").notNull(),
     startTime: time("start_time"),
     endTime: time("end_time"),
     note: text("note"),
   },
-  (t) => [index("availability_exceptions_business").on(t.businessId, t.date)],
+  (t) => [index("availability_exceptions_practitioner").on(t.practitionerId, t.date)],
 );
 
 // What the agent must collect from a new client, configured per business.
@@ -184,7 +228,7 @@ export const clients = pgTable(
 );
 
 // A Postgres exclusion constraint (see drizzle/0001_appointments_no_overlap.sql)
-// rejects overlapping live appointments for the same business.
+// rejects overlapping live appointments for the same practitioner (see 0004).
 export const appointments = pgTable(
   "appointments",
   {
@@ -196,6 +240,10 @@ export const appointments = pgTable(
     serviceId: uuid("service_id")
       .notNull()
       .references(() => services.id),
+    // No cascade: a doctor with appointments is deactivated, never deleted.
+    practitionerId: uuid("practitioner_id")
+      .notNull()
+      .references(() => practitioners.id),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     status: appointmentStatus("status").notNull().default("booked"),
@@ -210,6 +258,7 @@ export const appointments = pgTable(
   (t) => [
     index("appointments_business_time").on(t.businessId, t.startsAt),
     index("appointments_client").on(t.clientId, t.startsAt),
+    index("appointments_practitioner_time").on(t.practitionerId, t.startsAt),
   ],
 );
 
@@ -257,7 +306,7 @@ export const webhookEvents = pgTable("webhook_events", {
     .defaultNow(),
 });
 
-// Statuses that hold a slot. Keep in sync with drizzle/0001_appointments_no_overlap.sql.
+// Statuses that hold a slot. Keep in sync with drizzle/0004_practitioners.sql.
 export const LIVE_APPOINTMENT_STATUSES = [
   "booked",
   "reminder_sent",

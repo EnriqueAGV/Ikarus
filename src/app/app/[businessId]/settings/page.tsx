@@ -1,9 +1,12 @@
+import Link from "next/link";
 import { requireBusinessManager } from "@/lib/auth";
+import { listPractitioners } from "@/lib/booking/practitioners";
 import { todayIn } from "@/lib/dashboard/appointments";
 import { formatLocal, settingsErrorLabel, weekdayLabel } from "@/lib/dashboard/labels";
 import { getExceptions, getWeeklyRules, listIntakeFields, listServices } from "@/lib/dashboard/settings";
 import {
   addExceptionAction,
+  addPractitionerAction,
   createIntakeAction,
   createServiceAction,
   deleteIntakeAction,
@@ -12,6 +15,7 @@ import {
   saveGeneralAction,
   saveHoursAction,
   updateIntakeAction,
+  updatePractitionerAction,
   updateServiceAction,
 } from "../actions";
 
@@ -28,23 +32,52 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
   const sp = await searchParams;
   const { business } = await requireBusinessManager(businessId);
   const id = business.id;
+  const practitioners = await listPractitioners(id);
+  // Hours and days off are per doctor; the picker only shows with two or more.
+  const doctor =
+    practitioners.find((p) => p.id === sp.doctor) ?? practitioners.find((p) => p.active) ?? practitioners[0] ?? null;
   const [rules, exceptions, services, fields] = await Promise.all([
-    getWeeklyRules(id),
-    getExceptions(id, todayIn(business.timezone)),
+    doctor ? getWeeklyRules(id, doctor.id) : [],
+    doctor ? getExceptions(id, doctor.id, todayIn(business.timezone)) : [],
     listServices(id),
     listIntakeFields(id),
   ]);
+  const anyActive = practitioners.some((p) => p.active);
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "No se pudo guardar." : null;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
       {error && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
       {sp.saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Cambios guardados.</p>}
-      {(services.filter((s) => s.active).length === 0 || rules.length === 0) && (
+      {(services.filter((s) => s.active).length === 0 || rules.length === 0 || !anyActive) && (
         <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          El asistente solo puede agendar cuando hay al menos un servicio activo y un horario de atención.
+          El asistente solo puede agendar cuando hay al menos un doctor activo con horario de atención y un servicio activo.
         </p>
       )}
+
+      <section id="doctors" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Doctores</h2>
+        <ul className="flex flex-col gap-2">
+          {practitioners.map((p) => (
+            <li key={p.id}>
+              <form action={updatePractitionerAction.bind(null, id, p.id)} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+                <PractitionerInputs displayName={p.displayName} specialty={p.specialty} jvpmNumber={p.jvpmNumber} />
+                <label className="flex items-center gap-1 pb-1.5 text-sm">
+                  <input type="checkbox" name="active" defaultChecked={p.active} /> Activo
+                </label>
+                <button className={button}>Guardar</button>
+              </form>
+            </li>
+          ))}
+        </ul>
+        <form action={addPractitionerAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+          <PractitionerInputs displayName="" specialty={null} jvpmNumber={null} />
+          <button className={primary}>Agregar doctor</button>
+        </form>
+        <p className="text-xs text-neutral-500">
+          Cada doctor tiene su propio horario y sus días libres. Un doctor nuevo ofrece todos los servicios activos.
+        </p>
+      </section>
 
       <section id="services" className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Servicios</h2>
@@ -83,12 +116,28 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
         </form>
       </section>
 
+      {doctor && practitioners.length > 1 && (
+        <nav className="flex flex-wrap items-center gap-1 text-sm" aria-label="Doctor">
+          <span className="mr-1 text-neutral-500">Horario de</span>
+          {practitioners.map((p) => (
+            <Link
+              key={p.id}
+              href={`/app/${id}/settings?doctor=${p.id}#hours`}
+              className={`rounded-md border px-3 py-1 ${p.id === doctor.id ? "bg-brand text-white" : ""} ${p.active ? "" : "opacity-60"}`}
+            >
+              {p.displayName}
+            </Link>
+          ))}
+        </nav>
+      )}
+
+      {doctor && (
       <section id="hours" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Horario de atención</h2>
+        <h2 className="text-lg font-medium">Horario de atención{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
         <p className="text-sm text-neutral-500">
           Hora local ({business.timezone}). Usa el segundo horario para días con pausa, por ejemplo 9:00–14:00 y 16:00–19:00.
         </p>
-        <form action={saveHoursAction.bind(null, id)} className="flex flex-col gap-2 rounded-md border p-3">
+        <form action={saveHoursAction.bind(null, id, doctor.id)} className="flex flex-col gap-2 rounded-md border p-3">
           {WEEK.map((d) => {
             const day = rules.filter((r) => r.weekday === d);
             return (
@@ -112,9 +161,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
           </div>
         </form>
       </section>
+      )}
 
+      {doctor && (
       <section id="exceptions" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Días especiales</h2>
+        <h2 className="text-lg font-medium">Días especiales{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
         <p className="text-sm text-neutral-500">Días cerrados o con otro horario. Reemplazan el horario semanal ese día.</p>
         {exceptions.length > 0 && (
           <ul className="divide-y rounded-md border text-sm">
@@ -126,14 +177,14 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
                   {e.startTime ? `${hhmm(e.startTime)}–${hhmm(e.endTime)}` : "Cerrado"}
                   {e.note ? ` · ${e.note}` : ""}
                 </span>
-                <form action={removeExceptionAction.bind(null, id, e.id)}>
+                <form action={removeExceptionAction.bind(null, id, doctor.id, e.id)}>
                   <button className="text-xs text-neutral-500 hover:underline">Quitar</button>
                 </form>
               </li>
             ))}
           </ul>
         )}
-        <form action={addExceptionAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+        <form action={addExceptionAction.bind(null, id, doctor.id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
           <Field label="Fecha">
             <input type="date" name="date" required className={input} />
           </Field>
@@ -151,6 +202,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
           <button className={primary}>Agregar</button>
         </form>
       </section>
+      )}
 
       <section id="intake" className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Datos que pide el asistente</h2>
@@ -225,6 +277,22 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {label}
       {children}
     </label>
+  );
+}
+
+function PractitionerInputs(p: { displayName: string; specialty: string | null; jvpmNumber: string | null }) {
+  return (
+    <>
+      <Field label="Nombre">
+        <input name="displayName" defaultValue={p.displayName} required placeholder="Dra. Ana López" className={`${input} w-56`} />
+      </Field>
+      <Field label="Especialidad (opcional)">
+        <input name="specialty" defaultValue={p.specialty ?? ""} placeholder="Medicina general" className={`${input} w-44`} />
+      </Field>
+      <Field label="N.º JVPM (opcional)">
+        <input name="jvpmNumber" defaultValue={p.jvpmNumber ?? ""} className={`${input} w-28`} />
+      </Field>
+    </>
   );
 }
 

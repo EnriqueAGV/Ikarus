@@ -1,9 +1,10 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { createPractitioner, getPractitioner, offerServiceByAll } from "@/lib/booking/practitioners";
 
-// Business-facing configuration: opening hours, closures, services, intake
-// questions and reminder timing. Every function takes the business id so a
-// caller can only touch its own rows.
+// Business-facing configuration: doctors and their hours and days off,
+// services, intake questions and reminder timing. Every function takes the
+// business id so a caller can only touch its own rows.
 
 export type Range = { startTime: string; endTime: string };
 export type WeeklyRule = Range & { weekday: number };
@@ -28,48 +29,75 @@ export function validateRanges(ranges: Range[]) {
   }
 }
 
-export async function getWeeklyRules(businessId: string) {
+// Hours and days off belong to one doctor of this business.
+async function requirePractitioner(businessId: string, practitionerId: string) {
+  const practitioner = await getPractitioner(businessId, practitionerId);
+  if (!practitioner) throw new SettingsError("unknown_practitioner");
+  return practitioner;
+}
+
+export async function getWeeklyRules(businessId: string, practitionerId: string) {
   return db
     .select()
     .from(schema.availabilityRules)
-    .where(eq(schema.availabilityRules.businessId, businessId))
+    .where(
+      and(
+        eq(schema.availabilityRules.businessId, businessId),
+        eq(schema.availabilityRules.practitionerId, practitionerId),
+      ),
+    )
     .orderBy(asc(schema.availabilityRules.weekday), asc(schema.availabilityRules.startTime));
 }
 
-// Replaces the whole week at once, so the form is the source of truth.
-export async function saveWeeklyRules(businessId: string, rules: WeeklyRule[]) {
+// Replaces the doctor's whole week at once, so the form is the source of truth.
+export async function saveWeeklyRules(businessId: string, practitionerId: string, rules: WeeklyRule[]) {
   for (let weekday = 0; weekday < 7; weekday++) {
     validateRanges(rules.filter((r) => r.weekday === weekday));
   }
   if (rules.some((r) => !Number.isInteger(r.weekday) || r.weekday < 0 || r.weekday > 6)) {
     throw new SettingsError("invalid_weekday");
   }
+  await requirePractitioner(businessId, practitionerId);
   await db.transaction(async (tx) => {
-    await tx.delete(schema.availabilityRules).where(eq(schema.availabilityRules.businessId, businessId));
+    await tx
+      .delete(schema.availabilityRules)
+      .where(
+        and(
+          eq(schema.availabilityRules.businessId, businessId),
+          eq(schema.availabilityRules.practitionerId, practitionerId),
+        ),
+      );
     if (rules.length) {
-      await tx.insert(schema.availabilityRules).values(rules.map((r) => ({ ...r, businessId })));
+      await tx.insert(schema.availabilityRules).values(rules.map((r) => ({ ...r, businessId, practitionerId })));
     }
   });
 }
 
-export async function getExceptions(businessId: string, fromDate: string) {
+export async function getExceptions(businessId: string, practitionerId: string, fromDate: string) {
   const rows = await db
     .select()
     .from(schema.availabilityExceptions)
-    .where(eq(schema.availabilityExceptions.businessId, businessId))
+    .where(
+      and(
+        eq(schema.availabilityExceptions.businessId, businessId),
+        eq(schema.availabilityExceptions.practitionerId, practitionerId),
+      ),
+    )
     .orderBy(asc(schema.availabilityExceptions.date), asc(schema.availabilityExceptions.startTime));
   return rows.filter((r) => r.date >= fromDate);
 }
 
-// A date is either closed (no range) or open with custom hours, replacing the
-// weekly hours for that day.
+// A date is either a day off (no range) or open with custom hours, replacing
+// the doctor's weekly hours for that day.
 export async function addException(
   businessId: string,
+  practitionerId: string,
   input: { date: string; range: Range | null; note?: string },
 ) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) || Number.isNaN(Date.parse(input.date))) {
     throw new SettingsError("invalid_date");
   }
+  await requirePractitioner(businessId, practitionerId);
   await db.transaction(async (tx) => {
     const sameDay = await tx
       .select()
@@ -77,6 +105,7 @@ export async function addException(
       .where(
         and(
           eq(schema.availabilityExceptions.businessId, businessId),
+          eq(schema.availabilityExceptions.practitionerId, practitionerId),
           eq(schema.availabilityExceptions.date, input.date),
         ),
       );
@@ -93,6 +122,7 @@ export async function addException(
     }
     await tx.insert(schema.availabilityExceptions).values({
       businessId,
+      practitionerId,
       date: input.date,
       startTime: input.range?.startTime ?? null,
       endTime: input.range?.endTime ?? null,
@@ -132,13 +162,48 @@ export async function listServices(businessId: string) {
     .orderBy(asc(schema.services.name));
 }
 
+// Every active doctor offers a new service.
 export async function createService(businessId: string, input: ServiceInput) {
   validateService(input);
-  const [row] = await db
-    .insert(schema.services)
-    .values({ ...input, name: input.name.trim(), businessId })
-    .returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .insert(schema.services)
+      .values({ ...input, name: input.name.trim(), businessId })
+      .returning();
+    await offerServiceByAll(businessId, row.id, tx);
+    return row;
+  });
+}
+
+export type PractitionerInput = { displayName: string; specialty: string; jvpmNumber: string };
+
+function validatePractitioner(p: PractitionerInput) {
+  if (!p.displayName.trim()) throw new SettingsError("doctor_name_required");
+}
+
+// A new doctor offers every active service and starts with no hours.
+export async function addPractitioner(businessId: string, input: PractitionerInput) {
+  validatePractitioner(input);
+  return db.transaction((tx) => createPractitioner(businessId, input, tx));
+}
+
+// Doctors are never deleted, since appointments reference them; an inactive
+// doctor gets no new bookings.
+export async function updatePractitioner(
+  businessId: string,
+  practitionerId: string,
+  input: PractitionerInput & { active: boolean },
+) {
+  validatePractitioner(input);
+  await db
+    .update(schema.practitioners)
+    .set({
+      displayName: input.displayName.trim(),
+      specialty: input.specialty.trim() || null,
+      jvpmNumber: input.jvpmNumber.trim() || null,
+      active: input.active,
+    })
+    .where(and(eq(schema.practitioners.id, practitionerId), eq(schema.practitioners.businessId, businessId)));
 }
 
 // Services are never deleted, since past appointments reference them;

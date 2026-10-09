@@ -3,17 +3,21 @@ import { db, schema } from "@/db";
 import { env } from "@/lib/env";
 import * as kapso from "@/lib/kapso/client";
 import { TEMPLATES } from "@/lib/kapso/templates";
+import { createPractitioner } from "@/lib/booking/practitioners";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type Business = typeof schema.businesses.$inferSelect;
 
 // Super-admin creates a business: our row, its Kapso customer, the owner's
-// account, and a first setup link to send to the business.
+// account, the owner as its first doctor, and a first setup link to send to
+// the business.
 export async function createBusiness(input: {
   name: string;
   timezone: string;
   ownerEmail: string;
   ownerName?: string;
+  specialty?: string;
+  jvpmNumber?: string;
   createdBy: string;
 }): Promise<Business> {
   const [business] = await db
@@ -28,10 +32,17 @@ export async function createBusiness(input: {
     .where(eq(schema.businesses.id, business.id));
 
   const owner = await ensureUser(input.ownerEmail, input.ownerName);
-  await db
+  const [member] = await db
     .insert(schema.businessMembers)
     .values({ businessId: business.id, userId: owner.id, role: "owner" })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning();
+  await createPractitioner(business.id, {
+    displayName: input.ownerName?.trim() || input.ownerEmail.trim().toLowerCase(),
+    specialty: input.specialty,
+    jvpmNumber: input.jvpmNumber,
+    memberId: member?.id,
+  });
 
   await issueSetupLink(business.id, input.createdBy);
   return { ...business, kapsoCustomerId: customer.id };

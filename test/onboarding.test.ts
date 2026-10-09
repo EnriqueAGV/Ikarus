@@ -124,6 +124,9 @@ describe("createBusiness", () => {
     expect(profile.email).toBe("duena@luna.mx");
     const members = await db.select().from(schema.businessMembers);
     expect(members).toMatchObject([{ businessId: business.id, userId: profile.id, role: "owner" }]);
+    // The owner is the clinic's first doctor.
+    const practitioners = await db.select().from(schema.practitioners);
+    expect(practitioners).toMatchObject([{ businessId: business.id, memberId: members[0].id, displayName: "duena@luna.mx", active: true }]);
     const links = await db.select().from(schema.setupLinks);
     expect(links).toMatchObject([{ businessId: business.id, status: "pending" }]);
   });
