@@ -163,6 +163,17 @@ export function sendText(phoneNumberId: string, to: string, body: string) {
   ).then((r) => r.messages?.[0]?.id ?? null);
 }
 
+// Marks the patient's message as read and shows "escribiendo…" until the
+// next message is sent, or for at most 25 seconds.
+export function sendTyping(phoneNumberId: string, messageId: string) {
+  return kapso<unknown>("POST", `/meta/whatsapp/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
+    messaging_product: "whatsapp",
+    status: "read",
+    message_id: messageId,
+    typing_indicator: { type: "text" },
+  });
+}
+
 export type TemplateSend = {
   name: string;
   language: string;
