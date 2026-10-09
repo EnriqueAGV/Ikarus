@@ -1,27 +1,25 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Montserrat } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Ikarus",
+  metadataBase: new URL(process.env.APP_URL ?? "http://localhost:3000"),
+  title: { default: "Praxia", template: "%s · Praxia" },
   description: "Agenda por WhatsApp para tu negocio",
+  applicationName: "Praxia",
+  openGraph: { siteName: "Praxia", type: "website" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${montserrat.variable} h-full font-sans antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

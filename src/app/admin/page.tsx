@@ -29,7 +29,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         <div className="flex items-center gap-4">
           <Link
             href="/admin/new"
-            className="rounded-md bg-black px-3 py-1.5 text-sm text-white dark:bg-white dark:text-black"
+            className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover"
           >
             Nuevo negocio
           </Link>
@@ -57,7 +57,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         <form action={registerProjectWebhookAction}>
           <button className="underline">Registrar webhook de Kapso</button>
         </form>
-        <span>Hazlo una vez, y de nuevo si cambia la URL de la app, para que las conexiones nuevas lleguen a Ikarus.</span>
+        <span>Hazlo una vez, y de nuevo si cambia la URL de la app, para que las conexiones nuevas lleguen a Praxia.</span>
         {notice && <span className="w-full text-neutral-700 dark:text-neutral-300">{notice}</span>}
       </footer>
     </main>

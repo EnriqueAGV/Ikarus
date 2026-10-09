@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { redirect } from "next/navigation";
 import { SubmitButton } from "@/components/submit-button";
 import { setPassword } from "@/app/login/actions";
@@ -29,10 +30,11 @@ export default async function SetPasswordPage({
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
+      <Logo />
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Crea tu contraseña</h1>
         <p className="text-sm text-neutral-500">
-          La usarás junto con {data.user.email} para entrar a Ikarus.
+          La usarás junto con {data.user.email} para entrar a Praxia.
         </p>
       </div>
       <form action={setPassword} className="flex flex-col gap-3">
@@ -48,7 +50,7 @@ export default async function SetPasswordPage({
         </label>
         <SubmitButton
           pendingText="Guardando…"
-          className="rounded-md bg-black px-3 py-2 text-white disabled:opacity-60 dark:bg-white dark:text-black"
+          className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60"
         >
           Guardar y entrar
         </SubmitButton>

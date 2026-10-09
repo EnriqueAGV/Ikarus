@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { SubmitButton } from "@/components/submit-button";
 import { sendPasswordReset } from "../actions";
 
@@ -19,10 +20,11 @@ export default async function ForgotPasswordPage({
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
+      <Logo />
       <h1 className="text-2xl font-semibold">Crear una contraseña nueva</h1>
       {sent ? (
         <p className="text-sm">
-          Si tu correo tiene una cuenta en Ikarus, te enviamos un enlace para crear tu contraseña. Ábrelo en este mismo navegador.
+          Si tu correo tiene una cuenta en Praxia, te enviamos un enlace para crear tu contraseña. Ábrelo en este mismo navegador.
         </p>
       ) : (
         <form action={sendPasswordReset} className="flex flex-col gap-3">
@@ -32,7 +34,7 @@ export default async function ForgotPasswordPage({
           </label>
           <SubmitButton
             pendingText="Enviando…"
-            className="rounded-md bg-black px-3 py-2 text-white disabled:opacity-60 dark:bg-white dark:text-black"
+            className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60"
           >
             Enviarme un enlace
           </SubmitButton>

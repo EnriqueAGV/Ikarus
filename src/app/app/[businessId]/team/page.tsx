@@ -66,7 +66,7 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
             <option value="owner">Dueño: también ajustes y equipo</option>
           </select>
         </label>
-        <button className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white dark:bg-white dark:text-neutral-900">
+        <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
           Invitar
         </button>
       </form>

@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { and, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 
@@ -33,6 +34,7 @@ export default async function OnboardingFailedPage({
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 px-4 text-center">
+      <Logo className="mx-auto mb-3 h-9 w-auto" />
       <h1 className="text-2xl font-semibold">No pudimos conectar tu WhatsApp</h1>
       <p className="text-neutral-600">{messages[code] ?? "Ocurrió un error inesperado."}</p>
       <p className="text-sm text-neutral-500">

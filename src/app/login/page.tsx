@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { SubmitButton } from "@/components/submit-button";
 import { signIn } from "./actions";
 
 export const instant = false;
+
+export const metadata = { title: "Entrar" };
 
 const errors: Record<string, string> = {
   missing: "Escribe tu correo y tu contraseña.",
@@ -22,7 +25,8 @@ export default async function LoginPage({
 
   return (
     <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
-      <h1 className="text-2xl font-semibold">Entrar a Ikarus</h1>
+      <Logo />
+      <h1 className="text-2xl font-semibold">Entrar a tu cuenta</h1>
       <form action={signIn} className="flex flex-col gap-3">
         <input type="hidden" name="next" value={next} />
         <label className="flex flex-col gap-1 text-sm">
@@ -35,7 +39,7 @@ export default async function LoginPage({
         </label>
         <SubmitButton
           pendingText="Entrando…"
-          className="rounded-md bg-black px-3 py-2 text-white disabled:opacity-60 dark:bg-white dark:text-black"
+          className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60"
         >
           Entrar
         </SubmitButton>
