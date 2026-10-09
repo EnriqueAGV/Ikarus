@@ -154,3 +154,11 @@ export function listMessageTemplates(wabaId: string) {
     `/meta/whatsapp/${GRAPH_VERSION}/${wabaId}/message_templates?limit=100`,
   ).then((r) => r.data);
 }
+
+export function sendText(phoneNumberId: string, to: string, body: string) {
+  return kapso<{ messages?: { id: string }[] }>(
+    "POST",
+    `/meta/whatsapp/${GRAPH_VERSION}/${phoneNumberId}/messages`,
+    { messaging_product: "whatsapp", to, type: "text", text: { body } },
+  ).then((r) => r.messages?.[0]?.id ?? null);
+}

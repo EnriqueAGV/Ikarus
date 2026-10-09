@@ -257,6 +257,7 @@ export const webhookEvents = pgTable("webhook_events", {
     .defaultNow(),
 });
 
+// Statuses that hold a slot. Keep in sync with drizzle/0001_appointments_no_overlap.sql.
 export const LIVE_APPOINTMENT_STATUSES = [
   "booked",
   "reminder_sent",

@@ -21,6 +21,7 @@ const schema = z.object({
   KAPSO_PROJECT_WEBHOOK_SECRET: z.string().min(1).optional(),
   KAPSO_MESSAGE_WEBHOOK_SECRET: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  AGENT_MODEL: z.string().default("claude-opus-5-5"),
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
 });
