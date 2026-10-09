@@ -28,7 +28,7 @@ After the first deploy:
 
 ## Onboarding a business
 
-`/admin/new` creates the business, its Kapso customer, the owner's account (Supabase emails them an invitation that opens their dashboard through `/auth/invite`) and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
+`/admin/new` creates the business, its Kapso customer, the owner's account (the owner is also its first doctor, with their own calendar) (Supabase emails them an invitation that opens their dashboard through `/auth/invite`) and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the three Spanish reminder templates to Meta for review.
 
 ## Reminders
 
@@ -40,7 +40,7 @@ Owners and staff sign in at `/login` and land on `/app/<business>`:
 
 - **Citas**: day, week and upcoming views. Staff can cancel an upcoming appointment (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
 - **Clientes**: everyone who has written, their intake answers, appointments and conversation. When the agent hands a client to the business it pauses for that client; staff can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
-- **Ajustes** (owners): services, weekly hours, closed days, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active service and opening hours.
+- **Ajustes** (owners): doctors, each doctor's weekly hours and days off, services, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active doctor with hours and an active service. A new service is offered by every active doctor, and a new doctor offers every active service.
 - **Equipo** (owners): invite owners or staff by email; they sign in with a magic link.
 
 ## Layout
@@ -48,12 +48,12 @@ Owners and staff sign in at `/login` and land on `/app/<business>`:
 | Path | What it is |
 | --- | --- |
 | `src/db/schema.ts` | All tables; every business-owned row has `business_id` |
-| `drizzle/` | Migrations; `0001` adds the exclusion constraint that blocks overlapping appointments |
+| `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor |
 | `src/lib/auth.ts` | `requireSuperAdmin`, `requireBusinessAccess` |
 | `src/proxy.ts` | Refreshes the Supabase session, guards `/admin` and `/app` |
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |
-| `src/lib/booking/` | Free-slot engine and booking, cancel, reschedule |
+| `src/lib/booking/` | Practitioners (doctors), the free-slot engine and booking, cancel, reschedule |
 | `src/lib/agent/` | The WhatsApp booking agent (LLM + tools, `src/lib/agent/llm.ts` is the endpoint client) |
 | `src/lib/dashboard/` | Settings, calendar queries and team management behind the dashboard |
 | `src/app/app/[businessId]/` | Dashboard pages and their server actions |

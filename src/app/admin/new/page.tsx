@@ -16,7 +16,7 @@ const TIMEZONES = [
 ] as const;
 
 const errors: Record<string, string> = {
-  invalid: "Revisa los datos: nombre del negocio y correo del dueño son obligatorios.",
+  invalid: "Revisa los datos: nombre del consultorio, nombre del doctor y su correo son obligatorios.",
   failed: "No se pudo crear el negocio. Revisa las claves de Kapso y Supabase.",
 };
 
@@ -43,10 +43,12 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
             ))}
           </select>
         </label>
-        <Field label="Correo del dueño" name="ownerEmail" type="email" required />
-        <Field label="Nombre del dueño (opcional)" name="ownerName" />
+        <Field label="Nombre del doctor, como lo verán los pacientes" name="ownerName" required />
+        <Field label="Correo del doctor" name="ownerEmail" type="email" required />
+        <Field label="Especialidad (opcional)" name="specialty" />
+        <Field label="N.º JVPM (opcional)" name="jvpmNumber" />
         <p className="text-sm text-neutral-500">
-          Se crea la cuenta del dueño y un enlace para conectar su WhatsApp. El dueño recibe un correo para crear su contraseña y entrar a su panel.
+          Se crea la cuenta del doctor, su agenda y un enlace para conectar el WhatsApp del consultorio. El doctor recibe un correo para crear su contraseña y entrar a su panel.
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
         <button className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover">

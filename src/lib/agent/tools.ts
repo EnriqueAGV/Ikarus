@@ -11,6 +11,7 @@ import {
   rescheduleByClient,
   upcomingAppointments,
 } from "@/lib/booking/service";
+import { listPractitioners } from "@/lib/booking/practitioners";
 import { type Business, type Client, type IntakeField, missingIntake, reloadClient } from "./context";
 
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> };
@@ -22,6 +23,7 @@ const obj = (properties: Record<string, unknown>, required = Object.keys(propert
   additionalProperties: false,
 });
 const localDateTime = { type: "string", description: "Local time, YYYY-MM-DDTHH:mm" };
+const practitionerId = (description: string) => ({ type: ["string", "null"], description });
 
 export const TOOLS: Tool[] = [
   {
@@ -43,20 +45,30 @@ export const TOOLS: Tool[] = [
     input_schema: obj({}),
   },
   {
+    name: "list_practitioners",
+    description: "List the clinic's doctors, with their ids, specialty and the ids of the services each one offers.",
+    input_schema: obj({}),
+  },
+  {
     name: "find_available_slots",
     description:
-      "Find free start times for a service between two local dates (inclusive, at most 14 days apart).",
+      "Find free start times for a service between two local dates (inclusive, at most 14 days apart). Each slot says which doctor it is with.",
     input_schema: obj({
       service_id: { type: "string" },
       date_from: { type: "string", description: "YYYY-MM-DD" },
       date_to: { type: "string", description: "YYYY-MM-DD" },
+      practitioner_id: practitionerId("One doctor's id from list_practitioners, or null for any doctor who offers the service"),
     }),
   },
   {
     name: "book_appointment",
     description:
       "Book the client into a free slot returned by find_available_slots. Only after the client confirmed the service, day and time.",
-    input_schema: obj({ service_id: { type: "string" }, start: localDateTime }),
+    input_schema: obj({
+      service_id: { type: "string" },
+      start: localDateTime,
+      practitioner_id: practitionerId("The doctor of the chosen slot, or null for any free doctor who offers the service"),
+    }),
   },
   {
     name: "list_my_appointments",
@@ -72,7 +84,11 @@ export const TOOLS: Tool[] = [
     name: "reschedule_appointment",
     description:
       "Move one of this client's upcoming appointments to a new free slot of the same service. If the new time is taken, the original appointment is kept.",
-    input_schema: obj({ appointment_id: { type: "string" }, new_start: localDateTime }),
+    input_schema: obj({
+      appointment_id: { type: "string" },
+      new_start: localDateTime,
+      practitioner_id: practitionerId("Another doctor's id if the client wants to change doctor, or null to keep the same one"),
+    }),
   },
   {
     name: "handoff_to_business",
@@ -97,11 +113,21 @@ const inputs = {
     answers: z.array(z.object({ key: z.string(), value: z.string() })),
   }),
   list_services: z.object({}),
-  find_available_slots: z.object({ service_id: z.string(), date_from: z.string(), date_to: z.string() }),
-  book_appointment: z.object({ service_id: z.string(), start: z.string() }),
+  list_practitioners: z.object({}),
+  find_available_slots: z.object({
+    service_id: z.string(),
+    date_from: z.string(),
+    date_to: z.string(),
+    practitioner_id: z.string().nullish(),
+  }),
+  book_appointment: z.object({ service_id: z.string(), start: z.string(), practitioner_id: z.string().nullish() }),
   list_my_appointments: z.object({}),
   cancel_appointment: z.object({ appointment_id: z.string() }),
-  reschedule_appointment: z.object({ appointment_id: z.string(), new_start: z.string() }),
+  reschedule_appointment: z.object({
+    appointment_id: z.string(),
+    new_start: z.string(),
+    practitioner_id: z.string().nullish(),
+  }),
   handoff_to_business: z.object({ reason: z.string() }),
 };
 
@@ -110,6 +136,7 @@ const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Dat
 
 const bookingErrors = {
   unknown_service: "That service does not exist. Call list_services.",
+  unknown_practitioner: "That doctor does not exist or does not offer this service. Call list_practitioners.",
   invalid_time: "Time must be local YYYY-MM-DDTHH:mm.",
   slot_unavailable: "That time is not available (taken or outside opening hours). Call find_available_slots again.",
   not_found: "That appointment is not one of this client's upcoming appointments.",
@@ -154,18 +181,48 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       };
     }
 
+    case "list_practitioners": {
+      const [practitioners, offered] = await Promise.all([
+        listPractitioners(business.id, { activeOnly: true }),
+        db
+          .select()
+          .from(schema.practitionerServices)
+          .where(eq(schema.practitionerServices.businessId, business.id)),
+      ]);
+      return {
+        result: practitioners.map((p) => ({
+          id: p.id,
+          name: p.displayName,
+          specialty: p.specialty,
+          service_ids: offered.filter((o) => o.practitionerId === p.id).map((o) => o.serviceId),
+        })),
+      };
+    }
+
     case "find_available_slots": {
       const input = inputs.find_available_slots.parse(rawInput);
       if (!isUuid(input.service_id)) return { result: bookingErrors.unknown_service, isError: true };
+      if (input.practitioner_id && !isUuid(input.practitioner_id))
+        return { result: bookingErrors.unknown_practitioner, isError: true };
       if (!isDate(input.date_from) || !isDate(input.date_to))
         return { result: "Dates must be YYYY-MM-DD.", isError: true };
       const days = (Date.parse(input.date_to) - Date.parse(input.date_from)) / 86_400_000;
       if (days < 0 || days > 14) return { result: "Use a range of 0 to 14 days.", isError: true };
-      const slots = await availableSlots(business, input.service_id, input.date_from, input.date_to, now);
+      const slots = await availableSlots(business, {
+        serviceId: input.service_id,
+        fromDate: input.date_from,
+        toDate: input.date_to,
+        practitionerId: input.practitioner_id,
+        now,
+      });
       if (!slots) return { result: bookingErrors.unknown_service, isError: true };
       return {
         result: {
-          slots: slots.slice(0, 40).map((s) => describeSlot(s, tz)),
+          slots: slots.slice(0, 40).map((s) => ({
+            ...describeSlot(s.startsAt, tz),
+            practitioner_id: s.practitionerId,
+            practitioner: s.practitionerName,
+          })),
           total: slots.length,
         },
       };
@@ -178,11 +235,14 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       if (missing.length)
         return { result: `Collect these first: ${missing.join(", ")}`, isError: true };
       if (!isUuid(input.service_id)) return { result: bookingErrors.unknown_service, isError: true };
+      if (input.practitioner_id && !isUuid(input.practitioner_id))
+        return { result: bookingErrors.unknown_practitioner, isError: true };
       const booked = await bookAppointment({
         business,
         clientId: fresh.id,
         serviceId: input.service_id,
         localStart: input.start,
+        practitionerId: input.practitioner_id,
         now,
       });
       if (!booked.ok) return { result: bookingErrors[booked.reason], isError: true };
@@ -197,6 +257,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         result: rows.map((r) => ({
           appointment_id: r.appointment.id,
           service: r.serviceName,
+          practitioner: r.practitionerName,
           status: r.appointment.status,
           ...describeSlot(r.appointment.startsAt, tz),
         })),
@@ -214,11 +275,14 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
     case "reschedule_appointment": {
       const input = inputs.reschedule_appointment.parse(rawInput);
       if (!isUuid(input.appointment_id)) return { result: bookingErrors.not_found, isError: true };
+      if (input.practitioner_id && !isUuid(input.practitioner_id))
+        return { result: bookingErrors.unknown_practitioner, isError: true };
       const moved = await rescheduleByClient({
         business,
         clientId: ctx.client.id,
         appointmentId: input.appointment_id,
         localStart: input.new_start,
+        practitionerId: input.practitioner_id,
         now,
       });
       if (!moved.ok) return { result: bookingErrors[moved.reason], isError: true };

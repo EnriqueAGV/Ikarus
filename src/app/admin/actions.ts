@@ -15,7 +15,9 @@ const newBusiness = z.object({
   name: z.string().trim().min(2),
   timezone: z.string().min(1),
   ownerEmail: z.string().trim().email(),
-  ownerName: z.string().trim().optional(),
+  ownerName: z.string().trim().min(2),
+  specialty: z.string().trim().optional(),
+  jvpmNumber: z.string().trim().optional(),
 });
 
 export async function createBusinessAction(formData: FormData) {

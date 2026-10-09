@@ -23,6 +23,7 @@ process.env.KAPSO_API_BASE_URL = kapso.url;
 const { db, schema } = await import("@/db");
 const { eq, sql } = await import("drizzle-orm");
 const { runAgent } = await import("@/lib/agent/run");
+const { createPractitioner } = await import("@/lib/booking/practitioners");
 const messagesRoute = await import("@/app/api/webhooks/kapso/messages/route");
 
 // Monday 12 Oct 2026, 09:00 in Mexico City.
@@ -64,6 +65,7 @@ function lastToolResults(req: ChatRequest) {
 
 let business: typeof schema.businesses.$inferSelect;
 let serviceId: string;
+let practitionerId: string;
 
 beforeEach(async () => {
   kapso.calls.length = 0;
@@ -79,8 +81,9 @@ beforeEach(async () => {
     .insert(schema.services)
     .values({ businessId: business.id, name: "Corte de cabello", durationMin: 60 })
     .returning();
+  ({ id: practitionerId } = await createPractitioner(business.id, { displayName: "Dra. Ana Ruiz" }));
   await db.insert(schema.availabilityRules).values(
-    [1, 2, 3, 4, 5].map((weekday) => ({ businessId: business.id, weekday, startTime: "09:00", endTime: "18:00" })),
+    [1, 2, 3, 4, 5].map((weekday) => ({ businessId: business.id, practitionerId, weekday, startTime: "09:00", endTime: "18:00" })),
   );
   await db.insert(schema.intakeFields).values({
     businessId: business.id,
@@ -177,6 +180,8 @@ describe("booking agent", () => {
     expect(req.tools.map((t) => t.function.name)).toContain("book_appointment");
     expect(req.messages[0]).toMatchObject({ role: "system" });
     expect(String(req.messages[0].content)).toContain("Always reply in Spanish");
+    // A solo practice never hears about choosing a doctor.
+    expect(String(req.messages[0].content)).not.toContain("Doctors at this clinic");
     expect(req.messages[1]).toEqual({ role: "user", content: "Hola, soy Ana López, quiero un corte mañana a las 10" });
     const out = await db.select().from(schema.messages).where(eq(schema.messages.direction, "outbound"));
     expect(out).toHaveLength(1);
@@ -190,6 +195,7 @@ describe("booking agent", () => {
       businessId: business.id,
       clientId: client.id,
       serviceId,
+      practitionerId,
       startsAt: new Date("2026-10-13T16:30:00Z"),
       endsAt: new Date("2026-10-13T17:30:00Z"),
     });
@@ -213,13 +219,14 @@ describe("booking agent", () => {
     const client = await theClient();
     const [mine] = await db
       .insert(schema.appointments)
-      .values({ businessId: business.id, clientId: client.id, serviceId, startsAt: new Date("2026-10-13T16:00:00Z"), endsAt: new Date("2026-10-13T17:00:00Z") })
+      .values({ businessId: business.id, clientId: client.id, serviceId, practitionerId, startsAt: new Date("2026-10-13T16:00:00Z"), endsAt: new Date("2026-10-13T17:00:00Z") })
       .returning();
     const [otherClient] = await db.insert(schema.clients).values({ businessId: business.id, waPhone: "5210000000000" }).returning();
     await db.insert(schema.appointments).values({
       businessId: business.id,
       clientId: otherClient.id,
       serviceId,
+      practitionerId,
       startsAt: new Date("2026-10-14T16:00:00Z"),
       endsAt: new Date("2026-10-14T17:00:00Z"),
     });
@@ -242,13 +249,47 @@ describe("booking agent", () => {
     expect(rows.find((r) => r.id === mine.id)?.status).toBe("cancelled_by_client");
   });
 
+  it("books with a chosen doctor when the clinic has several", async () => {
+    const { id: secondId } = await createPractitioner(business.id, { displayName: "Dr. Luis Pérez", specialty: "Pediatría" });
+    await db.insert(schema.availabilityRules).values({ businessId: business.id, practitionerId: secondId, weekday: 2, startTime: "09:00", endTime: "12:00" });
+    await receive("Quiero cita con el Dr. Pérez el martes a las 10");
+    const client = await theClient();
+    await db.update(schema.clients).set({ data: { fecha_nacimiento: "1990-05-04" } });
+    const claude = fakeLlm([
+      { tools: [{ name: "list_practitioners", input: {} }] },
+      {
+        tools: [
+          {
+            name: "find_available_slots",
+            input: { service_id: serviceId, date_from: "2026-10-13", date_to: "2026-10-13", practitioner_id: secondId },
+          },
+        ],
+      },
+      { tools: [{ name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00", practitioner_id: secondId } }] },
+      { text: "Listo, con el Dr. Pérez el martes a las 10:00." },
+    ]);
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+
+    expect(String(claude.requests[0].messages[0].content)).toContain(`Dr. Luis Pérez (Pediatría): id ${secondId}`);
+    const listed = JSON.parse(lastToolResults(claude.requests[1])[0].content);
+    expect(listed).toEqual([
+      { id: practitionerId, name: "Dra. Ana Ruiz", specialty: null, service_ids: [serviceId] },
+      { id: secondId, name: "Dr. Luis Pérez", specialty: "Pediatría", service_ids: [serviceId] },
+    ]);
+    const slots = JSON.parse(lastToolResults(claude.requests[2])[0].content);
+    expect(slots.total).toBe(5);
+    expect(slots.slots[0]).toMatchObject({ local: "2026-10-13T09:00", practitioner_id: secondId, practitioner: "Dr. Luis Pérez" });
+    const [appt] = await db.select().from(schema.appointments);
+    expect(appt).toMatchObject({ practitionerId: secondId, status: "booked" });
+  });
+
   it("only cancels the client's own appointments", async () => {
     await receive("Cancela la cita");
     const client = await theClient();
     const [other] = await db.insert(schema.clients).values({ businessId: business.id, waPhone: "5210000000000" }).returning();
     const [theirs] = await db
       .insert(schema.appointments)
-      .values({ businessId: business.id, clientId: other.id, serviceId, startsAt: new Date("2026-10-13T16:00:00Z"), endsAt: new Date("2026-10-13T17:00:00Z") })
+      .values({ businessId: business.id, clientId: other.id, serviceId, practitionerId, startsAt: new Date("2026-10-13T16:00:00Z"), endsAt: new Date("2026-10-13T17:00:00Z") })
       .returning();
     const claude = fakeLlm([
       { tools: [{ name: "cancel_appointment", input: { appointment_id: theirs.id } }] },

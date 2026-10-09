@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ConfirmButton } from "@/components/confirm-button";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import { requireBusinessAccess } from "@/lib/auth";
+import { listPractitioners } from "@/lib/booking/practitioners";
 import {
   appointmentsBetween,
   shiftDate,
@@ -38,6 +39,8 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   const days = view === "week" ? 7 : 1;
   const rows =
     view === "list" ? await upcomingForBusiness(business.id) : await appointmentsBetween(business, from, shiftDate(from, days));
+  // The doctor only shows once the clinic has a second one.
+  const showDoctor = (await listPractitioners(business.id)).length > 1;
   const now = new Date();
 
   return (
@@ -96,7 +99,10 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                       >
                         <span className="font-medium">{formatLocal(r.appointment.startsAt, tz, "HH:mm")}</span>{" "}
                         {r.clientName ?? formatPhone(r.clientPhone)}
-                        <span className="block opacity-75">{r.serviceName}</span>
+                        <span className="block opacity-75">
+                          {r.serviceName}
+                          {showDoctor && ` · ${r.practitionerName}`}
+                        </span>
                       </Link>
                     </li>
                   ))}
@@ -113,7 +119,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
       ) : (
         <ul className="divide-y rounded-md border">
           {rows.map((r) => (
-            <AppointmentRow key={r.appointment.id} row={r} tz={tz} base={base} now={now} showDate={view === "list"} />
+            <AppointmentRow key={r.appointment.id} row={r} tz={tz} base={base} now={now} showDate={view === "list"} showDoctor={showDoctor} />
           ))}
         </ul>
       )}
@@ -121,7 +127,21 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   );
 }
 
-function AppointmentRow({ row, tz, base, now, showDate }: { row: Row; tz: string; base: string; now: Date; showDate: boolean }) {
+function AppointmentRow({
+  row,
+  tz,
+  base,
+  now,
+  showDate,
+  showDoctor,
+}: {
+  row: Row;
+  tz: string;
+  base: string;
+  now: Date;
+  showDate: boolean;
+  showDoctor: boolean;
+}) {
   const a = row.appointment;
   const isLive = live.has(a.status);
   const started = a.startsAt <= now;
@@ -138,7 +158,10 @@ function AppointmentRow({ row, tz, base, now, showDate }: { row: Row; tz: string
           <Link href={`${base}/clients/${a.clientId}`} className="font-medium hover:underline">
             {row.clientName ?? formatPhone(row.clientPhone)}
           </Link>
-          <div className="text-sm text-neutral-500">{row.serviceName}</div>
+          <div className="text-sm text-neutral-500">
+            {row.serviceName}
+            {showDoctor && ` · ${row.practitionerName}`}
+          </div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">

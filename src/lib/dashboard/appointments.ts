@@ -27,6 +27,7 @@ export function shiftDate(date: string, days: number) {
 const appointmentColumns = {
   appointment: schema.appointments,
   serviceName: schema.services.name,
+  practitionerName: schema.practitioners.displayName,
   clientName: schema.clients.name,
   clientPhone: schema.clients.waPhone,
 };
@@ -44,6 +45,7 @@ export async function appointmentsBetween(
     .from(schema.appointments)
     .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
     .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+    .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
     .where(
       and(
         eq(schema.appointments.businessId, business.id),
@@ -60,6 +62,7 @@ export async function upcomingForBusiness(businessId: string, now = new Date(), 
     .from(schema.appointments)
     .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
     .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+    .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
     .where(
       and(
         eq(schema.appointments.businessId, businessId),

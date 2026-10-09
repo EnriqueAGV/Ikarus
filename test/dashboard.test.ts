@@ -34,7 +34,8 @@ const settings = await import("@/lib/dashboard/settings");
 const dashboard = await import("@/lib/dashboard/appointments");
 const team = await import("@/lib/dashboard/team");
 const { sendStaffReply } = await import("@/lib/messaging/staff");
-const { availableSlots, bookAppointment } = await import("@/lib/booking/service");
+const { availableSlots, bookAppointment, rescheduleByClient } = await import("@/lib/booking/service");
+const { createPractitioner } = await import("@/lib/booking/practitioners");
 const { toConversation } = await import("@/lib/agent/run");
 
 // Monday 12 Oct 2026, 09:00 in Mexico City.
@@ -42,6 +43,7 @@ const NOW = new Date("2026-10-12T15:00:00Z");
 
 let business: typeof schema.businesses.$inferSelect;
 let clientId: string;
+let doctorId: string;
 
 beforeEach(async () => {
   sent.length = 0;
@@ -57,6 +59,7 @@ beforeEach(async () => {
     .insert(schema.clients)
     .values({ businessId: business.id, waPhone: "5215511112222", name: "Ana" })
     .returning();
+  ({ id: doctorId } = await createPractitioner(business.id, { displayName: "Dra. Ana Ruiz" }));
 });
 
 afterAll(() => kapso.close());
@@ -71,15 +74,15 @@ describe("opening hours", () => {
 
   it("replaces the whole week and drives the free slots", async () => {
     const service = await settings.createService(business.id, { name: "Corte", durationMin: 60, bufferMin: 0, active: true });
-    await settings.saveWeeklyRules(business.id, [{ weekday: 1, startTime: "08:00", endTime: "20:00" }]);
-    await settings.saveWeeklyRules(business.id, [
+    await settings.saveWeeklyRules(business.id, doctorId, [{ weekday: 1, startTime: "08:00", endTime: "20:00" }]);
+    await settings.saveWeeklyRules(business.id, doctorId, [
       { weekday: 1, startTime: "10:00", endTime: "12:00" },
       { weekday: 1, startTime: "16:00", endTime: "17:00" },
     ]);
-    expect(await settings.getWeeklyRules(business.id)).toHaveLength(2);
+    expect(await settings.getWeeklyRules(business.id, doctorId)).toHaveLength(2);
 
-    const slots = await availableSlots(business, service.id, "2026-10-12", "2026-10-12", NOW);
-    expect(slots!.map((s) => s.toISOString())).toEqual([
+    const slots = await availableSlots(business, { serviceId: service.id, fromDate: "2026-10-12", toDate: "2026-10-12", now: NOW });
+    expect(slots!.map((s) => s.startsAt.toISOString())).toEqual([
       "2026-10-12T16:00:00.000Z",
       "2026-10-12T16:30:00.000Z",
       "2026-10-12T17:00:00.000Z",
@@ -88,13 +91,13 @@ describe("opening hours", () => {
   });
 
   it("a closure replaces custom hours for that date, and the reverse", async () => {
-    await settings.addException(business.id, { date: "2026-12-24", range: { startTime: "09:00", endTime: "13:00" } });
-    await settings.addException(business.id, { date: "2026-12-24", range: null, note: "Nochebuena" });
-    let rows = await settings.getExceptions(business.id, "2026-10-01");
+    await settings.addException(business.id, doctorId, { date: "2026-12-24", range: { startTime: "09:00", endTime: "13:00" } });
+    await settings.addException(business.id, doctorId, { date: "2026-12-24", range: null, note: "Nochebuena" });
+    let rows = await settings.getExceptions(business.id, doctorId, "2026-10-01");
     expect(rows).toMatchObject([{ date: "2026-12-24", startTime: null, note: "Nochebuena" }]);
 
-    await settings.addException(business.id, { date: "2026-12-24", range: { startTime: "10:00", endTime: "12:00" } });
-    rows = await settings.getExceptions(business.id, "2026-10-01");
+    await settings.addException(business.id, doctorId, { date: "2026-12-24", range: { startTime: "10:00", endTime: "12:00" } });
+    rows = await settings.getExceptions(business.id, doctorId, "2026-10-01");
     expect(rows).toMatchObject([{ startTime: "10:00:00", endTime: "12:00:00" }]);
   });
 });
@@ -140,7 +143,7 @@ describe("services and intake", () => {
 describe("appointments from the dashboard", () => {
   async function book(localStart: string) {
     const service = await settings.createService(business.id, { name: "Corte", durationMin: 60, bufferMin: 0, active: true });
-    await settings.saveWeeklyRules(business.id, [{ weekday: 1, startTime: "09:00", endTime: "18:00" }]);
+    await settings.saveWeeklyRules(business.id, doctorId, [{ weekday: 1, startTime: "09:00", endTime: "18:00" }]);
     const result = await bookAppointment({ business, clientId, serviceId: service.id, localStart, now: NOW });
     if (!result.ok) throw new Error(result.reason);
     return { service, appointment: result.appointment };
@@ -226,5 +229,92 @@ describe("team", () => {
     await expect(team.removeMember(business.id, owner.memberId)).rejects.toThrow("last_owner");
     await team.removeMember(business.id, members.find((m) => m.role === "staff")!.memberId);
     expect(await team.listMembers(business.id)).toHaveLength(1);
+  });
+});
+
+describe("several doctors", () => {
+  const MONDAY = [{ weekday: 1, startTime: "09:00", endTime: "18:00" }];
+  let serviceId: string;
+  let secondId: string;
+
+  beforeEach(async () => {
+    ({ id: serviceId } = await settings.createService(business.id, { name: "Consulta", durationMin: 60, bufferMin: 0, active: true }));
+    ({ id: secondId } = await settings.addPractitioner(business.id, { displayName: "Dr. Luis Pérez", specialty: "Pediatría", jvpmNumber: "" }));
+    await settings.saveWeeklyRules(business.id, doctorId, MONDAY);
+    await settings.saveWeeklyRules(business.id, secondId, MONDAY);
+  });
+
+  const book = (localStart: string, practitionerId?: string) =>
+    bookAppointment({ business, clientId, serviceId, localStart, practitionerId, now: NOW });
+
+  it("lets two doctors see patients at the same time, but never one doctor twice", async () => {
+    const first = await book("2026-10-12T11:00");
+    const second = await book("2026-10-12T11:00");
+    const third = await book("2026-10-12T11:00");
+    expect(first.ok && first.appointment.practitionerId).toBe(doctorId);
+    expect(second.ok && second.appointment.practitionerId).toBe(secondId);
+    expect(third).toEqual({ ok: false, reason: "slot_unavailable" });
+
+    // The database constraint is per doctor too.
+    const row = (practitionerId: string) => ({
+      businessId: business.id,
+      clientId,
+      serviceId,
+      practitionerId,
+      startsAt: new Date("2026-10-12T19:00:00Z"),
+      endsAt: new Date("2026-10-12T20:00:00Z"),
+    });
+    await db.insert(schema.appointments).values(row(doctorId));
+    await db.insert(schema.appointments).values(row(secondId));
+    await expect(db.insert(schema.appointments).values(row(doctorId))).rejects.toMatchObject({ cause: { code: "23P01" } });
+  });
+
+  it("merges free times across doctors, or shows one doctor's calendar", async () => {
+    await settings.saveWeeklyRules(business.id, doctorId, [{ weekday: 1, startTime: "10:00", endTime: "11:00" }]);
+    await settings.saveWeeklyRules(business.id, secondId, [{ weekday: 1, startTime: "16:00", endTime: "17:00" }]);
+    const q = { serviceId, fromDate: "2026-10-12", toDate: "2026-10-12", now: NOW };
+
+    const any = await availableSlots(business, q);
+    expect(any!.map((s) => [s.startsAt.toISOString(), s.practitionerName])).toEqual([
+      ["2026-10-12T16:00:00.000Z", "Dra. Ana Ruiz"],
+      ["2026-10-12T22:00:00.000Z", "Dr. Luis Pérez"],
+    ]);
+    const his = await availableSlots(business, { ...q, practitionerId: secondId });
+    expect(his!.map((s) => s.practitionerId)).toEqual([secondId]);
+    expect(await book("2026-10-12T10:00", secondId)).toEqual({ ok: false, reason: "slot_unavailable" });
+  });
+
+  it("honors which doctor offers a service, their own duration, and inactive doctors", async () => {
+    await db
+      .delete(schema.practitionerServices)
+      .where(eq(schema.practitionerServices.practitionerId, secondId));
+    expect(await book("2026-10-12T11:00", secondId)).toEqual({ ok: false, reason: "unknown_practitioner" });
+
+    await db.update(schema.practitionerServices).set({ durationMin: 30 }).where(eq(schema.practitionerServices.practitionerId, doctorId));
+    const short = await book("2026-10-12T11:00", doctorId);
+    expect(short.ok && short.appointment.endsAt.toISOString()).toBe("2026-10-12T17:30:00.000Z");
+
+    await settings.updatePractitioner(business.id, doctorId, { displayName: "Dra. Ana Ruiz", specialty: "", jvpmNumber: "", active: false });
+    expect(await availableSlots(business, { serviceId, fromDate: "2026-10-12", toDate: "2026-10-12", now: NOW })).toEqual([]);
+  });
+
+  it("keeps the doctor when a patient reschedules", async () => {
+    const booked = await book("2026-10-12T11:00", secondId);
+    if (!booked.ok) throw new Error(booked.reason);
+    const moved = await rescheduleByClient({ business, clientId, appointmentId: booked.appointment.id, localStart: "2026-10-12T14:00", now: NOW });
+    expect(moved.ok && moved.appointment.practitionerId).toBe(secondId);
+  });
+
+  it("keeps each doctor's hours and days off separate, within the business", async () => {
+    await settings.saveWeeklyRules(business.id, secondId, []);
+    expect(await settings.getWeeklyRules(business.id, doctorId)).toHaveLength(1);
+    await settings.addException(business.id, secondId, { date: "2026-12-24", range: null });
+    expect(await settings.getExceptions(business.id, doctorId, "2026-10-01")).toEqual([]);
+
+    const [other] = await db.insert(schema.businesses).values({ name: "Otra clínica" }).returning();
+    await expect(settings.saveWeeklyRules(other.id, doctorId, MONDAY)).rejects.toThrow("unknown_practitioner");
+    await expect(settings.addPractitioner(business.id, { displayName: " ", specialty: "", jvpmNumber: "" })).rejects.toThrow(
+      "doctor_name_required",
+    );
   });
 });

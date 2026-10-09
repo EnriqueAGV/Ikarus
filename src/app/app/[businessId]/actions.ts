@@ -11,6 +11,7 @@ import {
 } from "@/lib/dashboard/appointments";
 import {
   addException,
+  addPractitioner,
   createIntakeField,
   createService,
   deleteIntakeField,
@@ -20,8 +21,10 @@ import {
   SettingsError,
   updateBusinessSettings,
   updateIntakeField,
+  updatePractitioner,
   updateService,
   type IntakeInput,
+  type PractitionerInput,
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
 import { inviteMember, removeMember, TeamError } from "@/lib/dashboard/team";
@@ -31,8 +34,14 @@ const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const int = (form: FormData, key: string) => Number.parseInt(str(form, key), 10);
 const checked = (form: FormData, key: string) => form.get(key) === "on";
 
-// Runs a settings change and comes back to the settings page with the outcome.
-async function settingsChange(businessId: string, section: string, change: () => Promise<unknown>) {
+// Runs a settings change and comes back to the settings page with the outcome,
+// on the same doctor's calendar when there is one.
+async function settingsChange(
+  businessId: string,
+  section: string,
+  change: () => Promise<unknown>,
+  practitionerId?: string,
+) {
   await requireBusinessManager(businessId);
   let error: string | null = null;
   try {
@@ -42,7 +51,8 @@ async function settingsChange(businessId: string, section: string, change: () =>
     error = err.code;
   }
   revalidatePath(`/app/${businessId}`, "layout");
-  redirect(`/app/${businessId}/settings?${error ? `error=${error}` : "saved=1"}#${section}`);
+  const doctor = practitionerId ? `&doctor=${practitionerId}` : "";
+  redirect(`/app/${businessId}/settings?${error ? `error=${error}` : "saved=1"}${doctor}#${section}`);
 }
 
 export async function appointmentAction(businessId: string, appointmentId: string, action: BusinessAction) {
@@ -71,7 +81,7 @@ export async function staffReplyAction(businessId: string, clientId: string, for
   redirect(`/app/${businessId}/clients/${clientId}?${outcome}#conversation`);
 }
 
-export async function saveHoursAction(businessId: string, form: FormData) {
+export async function saveHoursAction(businessId: string, practitionerId: string, form: FormData) {
   const rules: WeeklyRule[] = [];
   for (let weekday = 0; weekday < 7; weekday++) {
     if (!checked(form, `d${weekday}_open`)) continue;
@@ -81,22 +91,45 @@ export async function saveHoursAction(businessId: string, form: FormData) {
       if (startTime || endTime) rules.push({ weekday, startTime, endTime });
     }
   }
-  await settingsChange(businessId, "hours", () => saveWeeklyRules(businessId, rules));
+  await settingsChange(businessId, "hours", () => saveWeeklyRules(businessId, practitionerId, rules), practitionerId);
 }
 
-export async function addExceptionAction(businessId: string, form: FormData) {
+export async function addExceptionAction(businessId: string, practitionerId: string, form: FormData) {
   const closed = checked(form, "closed");
-  await settingsChange(businessId, "exceptions", () =>
-    addException(businessId, {
-      date: str(form, "date"),
-      range: closed ? null : { startTime: str(form, "startTime"), endTime: str(form, "endTime") },
-      note: str(form, "note"),
-    }),
+  await settingsChange(
+    businessId,
+    "exceptions",
+    () =>
+      addException(businessId, practitionerId, {
+        date: str(form, "date"),
+        range: closed ? null : { startTime: str(form, "startTime"), endTime: str(form, "endTime") },
+        note: str(form, "note"),
+      }),
+    practitionerId,
   );
 }
 
-export async function removeExceptionAction(businessId: string, exceptionId: string) {
-  await settingsChange(businessId, "exceptions", () => removeException(businessId, exceptionId));
+export async function removeExceptionAction(businessId: string, practitionerId: string, exceptionId: string) {
+  await settingsChange(businessId, "exceptions", () => removeException(businessId, exceptionId), practitionerId);
+}
+
+const practitionerFrom = (form: FormData): PractitionerInput => ({
+  displayName: str(form, "displayName"),
+  specialty: str(form, "specialty"),
+  jvpmNumber: str(form, "jvpmNumber"),
+});
+
+export async function addPractitionerAction(businessId: string, form: FormData) {
+  await settingsChange(businessId, "doctors", () => addPractitioner(businessId, practitionerFrom(form)));
+}
+
+export async function updatePractitionerAction(businessId: string, practitionerId: string, form: FormData) {
+  await settingsChange(
+    businessId,
+    "doctors",
+    () => updatePractitioner(businessId, practitionerId, { ...practitionerFrom(form), active: checked(form, "active") }),
+    practitionerId,
+  );
 }
 
 const serviceFrom = (form: FormData) => ({

@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
+import { listPractitioners } from "@/lib/booking/practitioners";
 import { upcomingAppointments } from "@/lib/booking/service";
 import { sendText } from "@/lib/kapso/client";
 import { loadIntakeFields, missingIntake, reloadClient } from "./context";
@@ -48,11 +49,12 @@ export async function runAgent(input: {
 
   const fields = await loadIntakeFields(business.id);
   const upcoming = await upcomingAppointments(business.id, client.id, now);
+  const practitioners = await listPractitioners(business.id, { activeOnly: true });
   const ctx: ToolContext = { business, client, fields, now };
 
   // The stable instructions come first so endpoints with prompt caching can reuse them.
   const system = [
-    staticSystemPrompt(business, fields),
+    staticSystemPrompt(business, fields, practitioners),
     turnContext({
       business,
       client,
@@ -60,6 +62,7 @@ export async function runAgent(input: {
       upcoming: upcoming.map((u) => ({
         id: u.appointment.id,
         serviceName: u.serviceName,
+        practitionerName: u.practitionerName,
         startsAt: u.appointment.startsAt,
         status: u.appointment.status,
       })),
