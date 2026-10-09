@@ -27,7 +27,8 @@ import {
   type PractitionerInput,
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
-import { inviteMember, removeMember, TeamError } from "@/lib/dashboard/team";
+import { PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
+import { inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -79,6 +80,49 @@ export async function staffReplyAction(businessId: string, clientId: string, for
   }
   revalidatePath(`/app/${businessId}/clients/${clientId}`);
   redirect(`/app/${businessId}/clients/${clientId}?${outcome}#conversation`);
+}
+
+const nullable = (form: FormData, key: string) => str(form, key) || null;
+
+async function patientChange(businessId: string, clientId: string, section: string, change: () => Promise<void>) {
+  let outcome = `saved=${section}`;
+  try {
+    await change();
+  } catch (err) {
+    if (!(err instanceof PatientError)) throw err;
+    outcome = `recordError=${err.code}`;
+  }
+  revalidatePath(`/app/${businessId}/clients/${clientId}`);
+  redirect(`/app/${businessId}/clients/${clientId}?${outcome}#${section}`);
+}
+
+export async function saveDemographicsAction(businessId: string, clientId: string, form: FormData) {
+  const membership = await requireBusinessAccess(businessId);
+  const sex = form.get("sex");
+  await patientChange(businessId, clientId, "datos", () =>
+    updateDemographics(membership, clientId, {
+      name: nullable(form, "name"),
+      dateOfBirth: nullable(form, "dateOfBirth"),
+      sex: sex === "female" || sex === "male" ? sex : null,
+      dui: nullable(form, "dui"),
+      address: nullable(form, "address"),
+      guardianName: nullable(form, "guardianName"),
+      guardianPhone: nullable(form, "guardianPhone"),
+      emergencyContactName: nullable(form, "emergencyContactName"),
+      emergencyContactPhone: nullable(form, "emergencyContactPhone"),
+      preferredPractitionerId: nullable(form, "preferredPractitionerId"),
+    }),
+  );
+}
+
+export async function saveClinicalAction(businessId: string, clientId: string, form: FormData) {
+  const membership = await requireBusinessAccess(businessId);
+  await patientChange(businessId, clientId, "clinico", () =>
+    updateClinical(membership, clientId, {
+      allergies: nullable(form, "allergies"),
+      chronicConditions: nullable(form, "chronicConditions"),
+    }),
+  );
 }
 
 export async function saveHoursAction(businessId: string, practitionerId: string, form: FormData) {
@@ -186,18 +230,37 @@ export async function saveGeneralAction(businessId: string, form: FormData) {
 export async function inviteMemberAction(businessId: string, form: FormData) {
   await requireBusinessManager(businessId);
   const email = z.string().trim().toLowerCase().email().safeParse(form.get("email"));
-  const role = form.get("role") === "owner" ? "owner" : "staff";
+  const role = form.get("role") === "doctor" ? "doctor" : "assistant";
+  const managesClinic = form.get("managesClinic") === "on";
+  const displayName = str(form, "displayName") || undefined;
   let outcome: string;
   if (!email.success) {
     outcome = "error=invalid_email";
   } else {
     try {
-      const { added, emailed } = await inviteMember(businessId, email.data, role);
+      const { added, emailed } = await inviteMember(businessId, { email: email.data, role, managesClinic, displayName });
       outcome = added ? `invited=${encodeURIComponent(email.data)}${emailed ? "&emailed=1" : ""}` : "exists=1";
     } catch (err) {
-      console.error("inviteMember failed", err);
-      outcome = "error=invite_failed";
+      if (err instanceof TeamError) {
+        outcome = `error=${err.code}`;
+      } else {
+        console.error("inviteMember failed", err);
+        outcome = "error=invite_failed";
+      }
     }
+  }
+  revalidatePath(`/app/${businessId}/team`);
+  redirect(`/app/${businessId}/team?${outcome}`);
+}
+
+export async function setManagesClinicAction(businessId: string, memberId: string, managesClinic: boolean) {
+  await requireBusinessManager(businessId);
+  let outcome = "saved=1";
+  try {
+    await setManagesClinic(businessId, memberId, managesClinic);
+  } catch (err) {
+    if (!(err instanceof TeamError)) throw err;
+    outcome = `error=${err.code}`;
   }
   revalidatePath(`/app/${businessId}/team`);
   redirect(`/app/${businessId}/team?${outcome}`);

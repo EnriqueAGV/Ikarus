@@ -33,6 +33,7 @@ const { eq, sql } = await import("drizzle-orm");
 const settings = await import("@/lib/dashboard/settings");
 const dashboard = await import("@/lib/dashboard/appointments");
 const team = await import("@/lib/dashboard/team");
+const patients = await import("@/lib/dashboard/patients");
 const labels = await import("@/lib/dashboard/labels");
 const { sendStaffReply } = await import("@/lib/messaging/staff");
 const { availableSlots, bookAppointment, rescheduleByClient } = await import("@/lib/booking/service");
@@ -232,22 +233,35 @@ describe("staff replies", () => {
 });
 
 describe("team", () => {
-  it("invites once and always keeps an owner", async () => {
+  it("invites once and always keeps someone managing the clinic", async () => {
     invites.length = 0;
-    expect(await team.inviteMember(business.id, "Duena@Luna.mx", "owner")).toEqual({ added: true, emailed: true });
+    const doctor = { email: "Duena@Luna.mx", role: "doctor" as const, managesClinic: true, displayName: "Dra. Luna" };
+    expect(await team.inviteMember(business.id, doctor)).toEqual({ added: true, emailed: true });
     // Already has an account: no second invitation email.
-    expect(await team.inviteMember(business.id, "duena@luna.mx", "owner")).toEqual({ added: false, emailed: false });
+    expect(await team.inviteMember(business.id, { ...doctor, email: "duena@luna.mx" })).toEqual({ added: false, emailed: false });
     expect(invites).toEqual([{ email: "duena@luna.mx", redirectTo: "https://ikarus.test/auth/invite?next=/app" }]);
-    await team.inviteMember(business.id, "luz@luna.mx", "staff");
+    await expect(
+      team.inviteMember(business.id, { email: "otro@luna.mx", role: "doctor", managesClinic: false }),
+    ).rejects.toThrow("doctor_name_required");
+    await team.inviteMember(business.id, { email: "luz@luna.mx", role: "assistant", managesClinic: false });
     const members = await team.listMembers(business.id);
-    expect(members.map((m) => [m.email, m.role])).toEqual([
-      ["duena@luna.mx", "owner"],
-      ["luz@luna.mx", "staff"],
+    expect(members.map((m) => [m.email, m.role, m.managesClinic, m.practitionerName])).toEqual([
+      ["duena@luna.mx", "doctor", true, "Dra. Luna"],
+      ["luz@luna.mx", "assistant", false, null],
     ]);
 
-    const owner = members.find((m) => m.role === "owner")!;
-    await expect(team.removeMember(business.id, owner.memberId)).rejects.toThrow("last_owner");
-    await team.removeMember(business.id, members.find((m) => m.role === "staff")!.memberId);
+    const manager = members.find((m) => m.role === "doctor")!;
+    const assistant = members.find((m) => m.role === "assistant")!;
+    await expect(team.removeMember(business.id, manager.memberId)).rejects.toThrow("last_manager");
+    await expect(team.setManagesClinic(business.id, manager.memberId, false)).rejects.toThrow("last_manager");
+    await team.setManagesClinic(business.id, assistant.memberId, true);
+    await team.setManagesClinic(business.id, manager.memberId, false);
+
+    // A doctor who leaves keeps their calendar, inactive.
+    await team.setManagesClinic(business.id, manager.memberId, true);
+    await team.removeMember(business.id, manager.memberId);
+    const [calendar] = await db.select().from(schema.practitioners).where(eq(schema.practitioners.displayName, "Dra. Luna"));
+    expect(calendar).toMatchObject({ active: false, memberId: null });
     expect(await team.listMembers(business.id)).toHaveLength(1);
   });
 });
@@ -336,5 +350,74 @@ describe("several doctors", () => {
     await expect(settings.addPractitioner(business.id, { displayName: " ", specialty: "", jvpmNumber: "" })).rejects.toThrow(
       "doctor_name_required",
     );
+  });
+});
+
+describe("patient record", () => {
+  async function actor(role: "doctor" | "assistant", email: string) {
+    const [profile] = await db.insert(schema.profiles).values({ id: crypto.randomUUID(), email }).returning();
+    return {
+      role,
+      managesClinic: false,
+      practitionerId: role === "doctor" ? doctorId : null,
+      business: { id: business.id },
+      profile: { id: profile.id },
+    };
+  }
+  const demographics = {
+    name: " Ana López ",
+    dateOfBirth: "1990-05-04",
+    sex: "female" as const,
+    dui: "012345678",
+    address: "Col. Escalón, San Salvador",
+    guardianName: null,
+    guardianPhone: null,
+    emergencyContactName: "Luis López",
+    emergencyContactPhone: "7000-0000",
+    preferredPractitionerId: null,
+  };
+
+  it("lets assistants edit demographics and only doctors the clinical fields, logging both", async () => {
+    const doctor = await actor("doctor", "doctora@luna.mx");
+    const assistant = await actor("assistant", "luz@luna.mx");
+
+    await patients.updateDemographics(assistant, clientId, { ...demographics, preferredPractitionerId: doctorId }, NOW);
+    const [saved] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(saved).toMatchObject({ name: "Ana López", dateOfBirth: "1990-05-04", sex: "female", dui: "01234567-8", preferredPractitionerId: doctorId });
+
+    await expect(patients.updateClinical(assistant, clientId, { allergies: "Penicilina", chronicConditions: null })).rejects.toThrow("forbidden");
+    await patients.updateClinical(doctor, clientId, { allergies: "Penicilina", chronicConditions: " " });
+    const [clinical] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(clinical).toMatchObject({ allergies: "Penicilina", chronicConditions: null });
+
+    // Opening the record twice in ten minutes is logged once.
+    await patients.logChartView(doctor, clientId);
+    await patients.logChartView(doctor, clientId);
+    const log = await patients.recentAccess(business.id, clientId);
+    expect(log.map((l) => [l.email, l.action, l.practitionerName])).toEqual(
+      expect.arrayContaining([
+        ["luz@luna.mx", "edit_chart", null],
+        ["doctora@luna.mx", "edit_clinical", "Dra. Ana Ruiz"],
+        ["doctora@luna.mx", "view_chart", "Dra. Ana Ruiz"],
+      ]),
+    );
+    expect(log).toHaveLength(3);
+
+    // The log keeps the patient: deleting them is refused.
+    await expect(db.delete(schema.clients).where(eq(schema.clients.id, clientId))).rejects.toThrow();
+  });
+
+  it("validates the DUI, birth date and doctor", async () => {
+    const assistant = await actor("assistant", "luz@luna.mx");
+    await expect(patients.updateDemographics(assistant, clientId, { ...demographics, dui: "1234" }, NOW)).rejects.toThrow("invalid_dui");
+    await expect(patients.updateDemographics(assistant, clientId, { ...demographics, dateOfBirth: "2030-01-01" }, NOW)).rejects.toThrow(
+      "invalid_birth_date",
+    );
+    await expect(
+      patients.updateDemographics(assistant, clientId, { ...demographics, preferredPractitionerId: crypto.randomUUID() }, NOW),
+    ).rejects.toThrow("unknown_practitioner");
+    await expect(patients.updateDemographics(assistant, crypto.randomUUID(), demographics, NOW)).rejects.toThrow("not_found");
+    expect(patients.normalizeDui("01234567-8")).toBe("01234567-8");
+    expect(patients.normalizeDui("")).toBeNull();
   });
 });

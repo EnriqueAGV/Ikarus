@@ -162,9 +162,16 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
           rejected.push(`${key}: must be one of ${field.options.join(", ")}`);
         else data[key] = value.trim();
       }
+      // The default birth-date question also fills the record header, unless
+      // the clinic already typed one in.
+      const birth = typeof data.fecha_nacimiento === "string" && isDate(data.fecha_nacimiento) ? data.fecha_nacimiento : null;
       const [client] = await db
         .update(schema.clients)
-        .set({ data, ...(input.name?.trim() ? { name: input.name.trim() } : {}) })
+        .set({
+          data,
+          ...(input.name?.trim() ? { name: input.name.trim() } : {}),
+          ...(birth && !ctx.client.dateOfBirth ? { dateOfBirth: birth } : {}),
+        })
         .where(eq(schema.clients.id, ctx.client.id))
         .returning();
       ctx.client = client;

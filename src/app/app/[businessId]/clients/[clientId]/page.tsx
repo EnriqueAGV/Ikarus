@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { requireBusinessAccess } from "@/lib/auth";
+import { can, requireBusinessAccess } from "@/lib/auth";
+import { listPractitioners } from "@/lib/booking/practitioners";
 import { getClientDetail } from "@/lib/dashboard/appointments";
 import {
   appointmentLabel,
@@ -9,18 +10,34 @@ import {
   formatPhone,
   settingsErrorLabel,
 } from "@/lib/dashboard/labels";
+import { logChartView, recentAccess } from "@/lib/dashboard/patients";
 import { listIntakeFields } from "@/lib/dashboard/settings";
-import { setAgentPausedAction, staffReplyAction } from "../../actions";
+import { saveClinicalAction, saveDemographicsAction, setAgentPausedAction, staffReplyAction } from "../../actions";
+
+const accessLabel = { view_chart: "Abrió el expediente", edit_chart: "Editó los datos", edit_clinical: "Editó los datos clínicos" } as const;
+const savedLabel: Record<string, string> = { datos: "Datos guardados.", clinico: "Datos clínicos guardados." };
 
 export default async function ClientPage({ params, searchParams }: PageProps<"/app/[businessId]/clients/[clientId]">) {
   const { businessId, clientId } = await params;
   const sp = await searchParams;
-  const { business } = await requireBusinessAccess(businessId);
-  const [detail, fields] = await Promise.all([getClientDetail(business.id, clientId), listIntakeFields(business.id)]);
+  const membership = await requireBusinessAccess(businessId);
+  const { business } = membership;
+  const clinical = can(membership, "chart.clinical");
+  const [detail, fields, practitioners] = await Promise.all([
+    getClientDetail(business.id, clientId),
+    listIntakeFields(business.id),
+    listPractitioners(business.id),
+  ]);
   if (!detail) notFound();
+  await logChartView(membership, clientId);
+  const access = clinical ? await recentAccess(business.id, clientId) : [];
   const { client, appointments, messages } = detail;
   const tz = business.timezone;
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "Algo salió mal." : null;
+  const recordError = typeof sp.recordError === "string" ? settingsErrorLabel[sp.recordError] ?? "Algo salió mal." : null;
+  const saved = typeof sp.saved === "string" ? savedLabel[sp.saved] : null;
+  const input = "rounded-md border px-2 py-1 text-sm";
+  const label = "flex flex-col gap-1 text-xs text-neutral-500";
 
   // Answers to questions the business later removed are still shown, by key.
   const known = new Set(fields.map((f) => f.key));
@@ -34,7 +51,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   return (
     <div className="flex flex-col gap-6">
       <Link href={`/app/${business.id}/clients`} className="text-sm text-neutral-500 hover:underline">
-        ← Clientes
+        ← Pacientes
       </Link>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -55,9 +72,93 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         </form>
       </header>
 
+      {recordError && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{recordError}</p>}
+      {saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{saved}</p>}
+
+      <section id="datos" className="rounded-md border p-4">
+        <h3 className="mb-3 font-medium">Datos del paciente</h3>
+        <form action={saveDemographicsAction.bind(null, business.id, client.id)} className="grid gap-3 sm:grid-cols-2">
+          <label className={label}>
+            Nombre completo
+            <input name="name" defaultValue={client.name ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Fecha de nacimiento
+            <input name="dateOfBirth" type="date" defaultValue={client.dateOfBirth ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Sexo
+            <select name="sex" defaultValue={client.sex ?? ""} className={input}>
+              <option value="">Sin indicar</option>
+              <option value="female">Femenino</option>
+              <option value="male">Masculino</option>
+            </select>
+          </label>
+          <label className={label}>
+            DUI
+            <input name="dui" defaultValue={client.dui ?? ""} placeholder="00000000-0" className={input} />
+          </label>
+          <label className={`${label} sm:col-span-2`}>
+            Dirección
+            <input name="address" defaultValue={client.address ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Responsable (menores)
+            <input name="guardianName" defaultValue={client.guardianName ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Teléfono del responsable
+            <input name="guardianPhone" defaultValue={client.guardianPhone ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Contacto de emergencia
+            <input name="emergencyContactName" defaultValue={client.emergencyContactName ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Teléfono de emergencia
+            <input name="emergencyContactPhone" defaultValue={client.emergencyContactPhone ?? ""} className={input} />
+          </label>
+          <label className={label}>
+            Doctor de preferencia
+            <select name="preferredPractitionerId" defaultValue={client.preferredPractitionerId ?? ""} className={input}>
+              <option value="">Ninguno</option>
+              {practitioners.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.displayName}
+                  {p.active ? "" : " (inactivo)"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-end justify-end">
+            <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Guardar datos</button>
+          </div>
+        </form>
+      </section>
+
+      {clinical && (
+        <section id="clinico" className="rounded-md border p-4">
+          <h3 className="mb-1 font-medium">Datos clínicos</h3>
+          <p className="mb-3 text-xs text-neutral-500">Solo los doctores del consultorio ven esta sección.</p>
+          <form action={saveClinicalAction.bind(null, business.id, client.id)} className="grid gap-3 sm:grid-cols-2">
+            <label className={label}>
+              Alergias
+              <textarea name="allergies" rows={3} defaultValue={client.allergies ?? ""} className={input} />
+            </label>
+            <label className={label}>
+              Enfermedades crónicas
+              <textarea name="chronicConditions" rows={3} defaultValue={client.chronicConditions ?? ""} className={input} />
+            </label>
+            <div className="flex justify-end sm:col-span-2">
+              <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Guardar datos clínicos</button>
+            </div>
+          </form>
+        </section>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
         <section className="rounded-md border p-4">
-          <h3 className="mb-3 font-medium">Datos</h3>
+          <h3 className="mb-3 font-medium">Respuestas por WhatsApp</h3>
           {answers.length === 0 ? (
             <p className="text-sm text-neutral-500">El consultorio no pide datos adicionales.</p>
           ) : (
@@ -126,6 +227,22 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           </div>
         </form>
       </section>
+
+      {clinical && (
+        <section className="rounded-md border p-4">
+          <h3 className="mb-3 font-medium">Accesos al expediente</h3>
+          <ul className="flex flex-col gap-1 text-sm">
+            {access.map((a) => (
+              <li key={a.id} className="flex justify-between gap-2">
+                <span>
+                  {a.practitionerName ?? a.fullName ?? a.email} · {accessLabel[a.action]}
+                </span>
+                <span className="text-neutral-500">{formatLocal(a.createdAt, tz, "d MMM yyyy, HH:mm")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

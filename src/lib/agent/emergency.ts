@@ -10,6 +10,7 @@ const PATTERNS = [
   /\bemergencia/,
   /\bdolor (fuerte )?(de|en el) pecho/,
   /\b(no puedo|no puede|no podemos|dificultad para|me cuesta|le cuesta) respirar/,
+  /\bno respira/,
   /\b(me|le|nos) falta (el )?aire/,
   /\b(me|se) (ahogo|ahoga)\b/,
   /\bdesmay/,

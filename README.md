@@ -28,7 +28,7 @@ After the first deploy:
 
 ## Onboarding a business
 
-`/admin/new` creates the business, its Kapso customer, the owner's account (the owner is also its first doctor, with their own calendar) (Supabase emails them an invitation that opens their dashboard through `/auth/invite`) and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the four Spanish reminder templates to Meta for review.
+`/admin/new` creates the business, its Kapso customer, the first doctor's account (a doctor who manages the clinic, with their own calendar) (Supabase emails them an invitation that opens their dashboard through `/auth/invite`) and a setup link. Send the link to the business. When they connect their number, Kapso calls `/api/webhooks/kapso/project` (and redirects them to `/onboarding/success`); Ikarus then registers the number's message webhook and submits the four Spanish reminder templates to Meta for review.
 
 ## Reminders
 
@@ -36,22 +36,24 @@ Every booking starts the `appointment-reminders` Inngest function. At the clinic
 
 Messages that describe an emergency (chest pain, trouble breathing, fainting, bleeding and similar, see `src/lib/agent/emergency.ts`) never reach the LLM: the patient gets a fixed reply pointing to 911 and Cruz Roja (132), and the conversation is handed to the team.
 
+Before the agent handles anything else, a new patient gets a button message linking to the clinic's privacy notice (`/privacidad/<business>`, a draft until a lawyer reviews it). The agent waits until they tap Acepto or write ACEPTO; the acceptance is stored in `consents` with the message and the notice version (`NOTICE_VERSION` in `src/lib/agent/consent.ts`; changing it asks everyone again). Emergencies are answered before consent.
+
 ## The business dashboard
 
-Owners and staff sign in at `/login` and land on `/app/<business>`:
+Doctors and assistants sign in at `/login` and land on `/app/<business>`. Doctors also enter a code from an authenticator app (Supabase TOTP, set up at `/auth/mfa` on their first sign-in); assistants don't need one yet. Every permission check goes through `can()` in `src/lib/permissions.ts`.
 
-- **Citas**: day, week and upcoming views. Staff can confirm an appointment by phone, cancel an upcoming one (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
-- **Pacientes**: everyone who has written, their intake answers, appointments and conversation. When the agent hands a client to the business it pauses for that client; staff can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
-- **Ajustes** (owners): doctors, each doctor's weekly hours and days off, services, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active doctor with hours and an active service. A new service is offered by every active doctor, and a new doctor offers every active service.
-- **Equipo** (owners): invite owners or staff by email; they sign in with a magic link.
+- **Citas**: day, week and upcoming views. The team can confirm an appointment by phone, cancel an upcoming one (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
+- **Pacientes**: everyone who has written. A patient's page has their record (name, birth date, sex, DUI, address, guardian, emergency contact, preferred doctor), their WhatsApp intake answers, appointments and conversation. Allergies and chronic conditions are shown to doctors only, and so is the access log: who opened or edited the record, and when. When the agent hands a patient to the clinic it pauses for them; the team can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
+- **Ajustes** (members who manage the clinic): doctors, each doctor's weekly hours and days off, services, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active doctor with hours and an active service. A new service is offered by every active doctor, and a new doctor offers every active service.
+- **Equipo** (members who manage the clinic): invite doctors or assistants by email and choose who manages the clinic. Inviting a doctor also creates their calendar. A clinic always keeps at least one manager, and a doctor who leaves keeps their calendar, inactive.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `src/db/schema.ts` | All tables; every business-owned row has `business_id` |
-| `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor |
-| `src/lib/auth.ts` | `requireSuperAdmin`, `requireBusinessAccess` |
+| `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor; `0006` adds doctor and assistant roles, the patient record fields, the access log and consents |
+| `src/lib/auth.ts`, `src/lib/permissions.ts` | `requireSuperAdmin`, `requireBusinessAccess` (with the doctors' second factor) and the permission table `can()` |
 | `src/proxy.ts` | Refreshes the Supabase session, guards `/admin` and `/app` |
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
+import { can, needsSecondFactor, type Role } from "@/lib/permissions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type Profile = typeof schema.profiles.$inferSelect;
@@ -55,13 +56,19 @@ export async function requireSuperAdmin(): Promise<Profile> {
   return profile;
 }
 
+export { can, needsSecondFactor, type Action, type Role } from "@/lib/permissions";
+
 export type Membership = {
   profile: Profile;
   business: typeof schema.businesses.$inferSelect;
-  role: "owner" | "staff" | "super_admin";
+  role: Role;
+  managesClinic: boolean;
+  // The doctor's own calendar, when the member is a doctor with one.
+  practitionerId: string | null;
 };
 
 // Super-admins can open any business; everyone else needs a membership row.
+// Doctors must have passed two-factor sign-in in this session.
 export async function requireBusinessAccess(
   businessId: string,
 ): Promise<Membership> {
@@ -71,19 +78,38 @@ export async function requireBusinessAccess(
     .from(schema.businesses)
     .where(eq(schema.businesses.id, businessId));
   if (!business) redirect("/app");
-  if (profile.isSuperAdmin) return { profile, business, role: "super_admin" };
+  if (profile.isSuperAdmin) {
+    return { profile, business, role: "super_admin", managesClinic: true, practitionerId: null };
+  }
 
-  const [member] = await db
-    .select()
+  const [row] = await db
+    .select({ member: schema.businessMembers, practitionerId: schema.practitioners.id })
     .from(schema.businessMembers)
+    .leftJoin(schema.practitioners, eq(schema.practitioners.memberId, schema.businessMembers.id))
     .where(
       and(
         eq(schema.businessMembers.businessId, businessId),
         eq(schema.businessMembers.userId, profile.id),
       ),
     );
-  if (!member) redirect("/app");
-  return { profile, business, role: member.role };
+  if (!row) redirect("/app");
+  const membership: Membership = {
+    profile,
+    business,
+    role: row.member.role,
+    managesClinic: row.member.managesClinic,
+    practitionerId: row.practitionerId,
+  };
+  if (needsSecondFactor(membership.role, await assuranceLevel())) {
+    redirect(`/auth/mfa?next=${encodeURIComponent(`/app/${businessId}`)}`);
+  }
+  return membership;
+}
+
+async function assuranceLevel() {
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  return data?.currentLevel ?? null;
 }
 
 export async function listMyBusinesses(profile: Profile) {
@@ -101,13 +127,8 @@ export async function listMyBusinesses(profile: Profile) {
     .then((rows) => rows.map((r) => r.business));
 }
 
-// Owners and super-admins change settings and the team; staff work the calendar.
-export function canManage(role: Membership["role"]) {
-  return role === "owner" || role === "super_admin";
-}
-
 export async function requireBusinessManager(businessId: string): Promise<Membership> {
   const membership = await requireBusinessAccess(businessId);
-  if (!canManage(membership.role)) redirect(`/app/${businessId}`);
+  if (!can(membership, "clinic.manage")) redirect(`/app/${businessId}`);
   return membership;
 }

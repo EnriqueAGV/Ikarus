@@ -42,7 +42,7 @@ export async function createBusiness(input: {
   const owner = await ensureUser(input.ownerEmail, input.ownerName);
   const [member] = await db
     .insert(schema.businessMembers)
-    .values({ businessId: business.id, userId: owner.id, role: "owner" })
+    .values({ businessId: business.id, userId: owner.id, role: "doctor", managesClinic: true })
     .onConflictDoNothing()
     .returning();
   await db

@@ -4,9 +4,9 @@ import { requireBusinessManager } from "@/lib/auth";
 import { settingsErrorLabel } from "@/lib/dashboard/labels";
 import { listMembers } from "@/lib/dashboard/team";
 import { env } from "@/lib/env";
-import { inviteMemberAction, removeMemberAction } from "../actions";
+import { inviteMemberAction, removeMemberAction, setManagesClinicAction } from "../actions";
 
-const roleLabel = { owner: "Dueño", staff: "Equipo" } as const;
+const roleLabel = { doctor: "Doctor", assistant: "Asistente" } as const;
 
 export default async function TeamPage({ params, searchParams }: PageProps<"/app/[businessId]/team">) {
   const { businessId } = await params;
@@ -35,11 +35,19 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
         {members.map((m) => (
           <li key={m.memberId} className="flex items-center justify-between gap-2 px-4 py-3">
             <div>
-              <div className="font-medium">{m.fullName ?? m.email}</div>
-              {m.fullName && <div className="text-sm text-neutral-500">{m.email}</div>}
+              <div className="font-medium">{m.practitionerName ?? m.fullName ?? m.email}</div>
+              {(m.practitionerName || m.fullName) && <div className="text-sm text-neutral-500">{m.email}</div>}
             </div>
             <div className="flex items-center gap-3 text-sm">
-              <span className="text-neutral-500">{roleLabel[m.role]}</span>
+              <span className="text-neutral-500">
+                {roleLabel[m.role]}
+                {m.managesClinic ? " · administra" : ""}
+              </span>
+              <form action={setManagesClinicAction.bind(null, business.id, m.memberId, !m.managesClinic)}>
+                <button className="text-xs text-neutral-600 hover:underline dark:text-neutral-300">
+                  {m.managesClinic ? "Quitar administración" : "Dar administración"}
+                </button>
+              </form>
               <form action={removeMemberAction.bind(null, business.id, m.memberId)}>
                 <ConfirmButton
                   message={m.userId === profile.id ? "¿Quitarte del consultorio? Perderás el acceso." : `¿Quitar a ${m.email}?`}
@@ -61,10 +69,18 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
         </label>
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Rol
-          <select name="role" defaultValue="staff" className="rounded-md border px-2 py-1 text-sm">
-            <option value="staff">Equipo: ve citas y pacientes</option>
-            <option value="owner">Dueño: también ajustes y equipo</option>
+          <select name="role" defaultValue="assistant" className="rounded-md border px-2 py-1 text-sm">
+            <option value="assistant">Asistente: agenda y datos del paciente</option>
+            <option value="doctor">Doctor: también datos clínicos y su propia agenda</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-neutral-500">
+          Nombre que ven los pacientes (doctores)
+          <input name="displayName" placeholder="Dra. Ana López" className="w-56 rounded-md border px-2 py-1 text-sm" />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-neutral-500">
+          <input name="managesClinic" type="checkbox" />
+          Administra ajustes y equipo
         </label>
         <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
           Invitar

@@ -1,16 +1,17 @@
 import { LogoMark } from "@/components/logo";
 import { SignOutButton } from "@/components/signout-button";
 import { NavLinks } from "@/components/dashboard/nav-links";
-import { canManage, requireBusinessAccess } from "@/lib/auth";
+import { can, requireBusinessAccess } from "@/lib/auth";
 
 export default async function BusinessLayout({ children, params }: LayoutProps<"/app/[businessId]">) {
   const { businessId } = await params;
-  const { business, role } = await requireBusinessAccess(businessId);
+  const membership = await requireBusinessAccess(businessId);
+  const { business } = membership;
   const base = `/app/${business.id}`;
   const links = [
     { href: base, label: "Citas", exact: true },
     { href: `${base}/clients`, label: "Pacientes" },
-    ...(canManage(role)
+    ...(can(membership, "clinic.manage")
       ? [
           { href: `${base}/settings`, label: "Ajustes" },
           { href: `${base}/team`, label: "Equipo" },
