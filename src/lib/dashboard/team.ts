@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { createPractitioner } from "@/lib/booking/practitioners";
+import { forgetDevices } from "@/lib/devices";
 import { ensureUser } from "@/lib/onboarding";
 
 export type MemberRole = (typeof schema.memberRole.enumValues)[number];
@@ -92,3 +93,14 @@ export async function removeMember(businessId: string, memberId: string) {
       .where(and(eq(schema.businessMembers.id, memberId), eq(schema.businessMembers.businessId, businessId)));
   });
 }
+
+// A lost phone or laptop: the member's devices all ask for a code again.
+export async function forgetMemberDevices(businessId: string, memberId: string) {
+  const [member] = await db
+    .select({ userId: schema.businessMembers.userId })
+    .from(schema.businessMembers)
+    .where(and(eq(schema.businessMembers.id, memberId), eq(schema.businessMembers.businessId, businessId)));
+  if (!member) throw new TeamError("not_found");
+  await forgetDevices(member.userId);
+}
+

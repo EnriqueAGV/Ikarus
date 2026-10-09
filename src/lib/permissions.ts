@@ -2,9 +2,10 @@
 // and data modules can use them.
 export type Role = "doctor" | "assistant" | "super_admin";
 
-// Doctors read clinical records, so their sessions need two factors (aal2).
-export function needsSecondFactor(role: Role, level: string | null) {
-  return role === "doctor" && level !== "aal2";
+// Doctors read clinical records and managers control the clinic, so the
+// first sign-in on each new device asks them for a code sent by email.
+export function needsDeviceCode(m: { role: Role; managesClinic: boolean }) {
+  return m.role === "doctor" || m.role === "super_admin" || m.managesClinic;
 }
 
 // Every permission check goes through here; pages and actions never test

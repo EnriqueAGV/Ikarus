@@ -40,7 +40,7 @@ Before the agent handles anything else, a new patient gets a button message link
 
 ## The business dashboard
 
-Doctors and assistants sign in at `/login` and land on `/app/<business>`. Doctors also enter a code from an authenticator app (Supabase TOTP, set up at `/auth/mfa` on their first sign-in); assistants don't need one yet. Every permission check goes through `can()` in `src/lib/permissions.ts`.
+Doctors and assistants sign in at `/login` and land on `/app/<business>`. The first time a doctor, a clinic manager or a super-admin signs in on a new computer or phone, `/auth/device` emails them a one-time code (Supabase email OTP); once they type it, that browser is remembered (a cookie whose hash is in `trusted_devices`) and isn't asked again. "Olvidar dispositivos" in Equipo makes all of someone's devices ask again, for a lost phone. The code reaches people only if Supabase's Magic Link email template includes `{{ .Token }}`. Every permission check goes through `can()` in `src/lib/permissions.ts`.
 
 - **Citas**: day, week and upcoming views. The team can confirm an appointment by phone, cancel an upcoming one (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
 - **Pacientes**: everyone who has written. A patient's page has their record (name, birth date, sex, DUI, address, guardian, emergency contact, preferred doctor), their WhatsApp intake answers, appointments and conversation. Allergies and chronic conditions are shown to doctors only, and so are the clinical notes and the access log: who opened, edited, signed or printed the record, and when. When the agent hands a patient to the clinic it pauses for them; the team can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
@@ -61,7 +61,7 @@ Note text, vitals, addenda, the DUI, allergies, chronic conditions, intake answe
 | --- | --- |
 | `src/db/schema.ts` | All tables; every business-owned row has `business_id` |
 | `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor; `0006` adds doctor and assistant roles, the patient record fields, the access log and consents; `0007` adds clinical notes and addenda with the triggers that lock them |
-| `src/lib/auth.ts`, `src/lib/permissions.ts` | `requireSuperAdmin`, `requireBusinessAccess` (with the doctors' second factor) and the permission table `can()` |
+| `src/lib/auth.ts`, `src/lib/permissions.ts` | `requireSuperAdmin`, `requireBusinessAccess` (with the new-device code) and the permission table `can()` |
 | `src/proxy.ts` | Refreshes the Supabase session, guards `/admin` and `/app` |
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |
 | `src/lib/onboarding.ts` | Business creation, setup links, connecting a number |
