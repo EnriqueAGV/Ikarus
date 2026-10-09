@@ -21,7 +21,7 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
 
   return (
     <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-      <header className="mb-6 flex flex-col gap-3 border-b pb-4">
+      <header className="mb-6 flex flex-col gap-3 border-b pb-4 print:hidden">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <LogoMark className="h-9 w-9 shrink-0" />

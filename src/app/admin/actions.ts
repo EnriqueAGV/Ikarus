@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSuperAdmin } from "@/lib/auth";
+import { encryptExistingRows } from "@/lib/encrypt-backfill";
 import {
   createBusiness,
   ensureProjectWebhook,
@@ -60,3 +61,18 @@ export async function registerProjectWebhookAction() {
   }
   redirect(`/admin?webhook=${outcome}`);
 }
+
+// Encrypts rows written before app-level encryption, or under an older key.
+export async function encryptExistingAction() {
+  await requireSuperAdmin();
+  let outcome: string;
+  try {
+    const { clients, messages } = await encryptExistingRows();
+    outcome = `encrypted=${clients + messages}`;
+  } catch (err) {
+    console.error("encryptExistingRows failed", err instanceof Error ? err.message : err);
+    outcome = "encrypted=failed";
+  }
+  redirect(`/admin?${outcome}`);
+}
+

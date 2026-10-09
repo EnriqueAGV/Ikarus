@@ -1,5 +1,6 @@
 import {
   boolean,
+  customType,
   date,
   index,
   integer,
@@ -14,8 +15,24 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { decrypt, encrypt } from "../lib/crypto";
 
 const id = () => uuid("id").primaryKey().defaultRandom();
+
+// Sensitive columns are AES-256-GCM encrypted by the app (src/lib/crypto.ts).
+// They are text in Postgres and can't be filtered or searched in SQL.
+const encryptedText = (name: string, context: string) =>
+  customType<{ data: string; driverData: string }>({
+    dataType: () => "text",
+    toDriver: (value) => encrypt(value, context),
+    fromDriver: (value) => decrypt(value, context),
+  })(name);
+const encryptedJson = <T>(name: string, context: string) =>
+  customType<{ data: T; driverData: string }>({
+    dataType: () => "text",
+    toDriver: (value) => encrypt(JSON.stringify(value), context),
+    fromDriver: (value) => JSON.parse(decrypt(value, context)) as T,
+  })(name);
 const createdAt = () =>
   timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 const businessId = () =>
@@ -27,7 +44,16 @@ const businessId = () =>
 // separate permission to edit settings and invite people.
 export const memberRole = pgEnum("member_role", ["doctor", "assistant"]);
 export const patientSex = pgEnum("patient_sex", ["female", "male"]);
-export const accessAction = pgEnum("access_action", ["view_chart", "edit_chart", "edit_clinical"]);
+export const accessAction = pgEnum("access_action", [
+  "view_chart",
+  "edit_chart",
+  "edit_clinical",
+  "create_note",
+  "sign_note",
+  "add_addendum",
+  "print_note",
+]);
+export const noteStatus = pgEnum("note_status", ["draft", "signed"]);
 export const businessStatus = pgEnum("business_status", [
   "invited",
   "connected",
@@ -229,21 +255,23 @@ export const clients = pgTable(
     businessId: businessId(),
     waPhone: text("wa_phone").notNull(), // E.164 without "+", as WhatsApp sends it
     name: text("name"),
-    data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+    data: encryptedJson<Record<string, unknown>>("data", "clients.data")
+      .notNull()
+      .$defaultFn(() => ({})),
     agentPaused: boolean("agent_paused").notNull().default(false),
     // The record header. Patients belong to the clinic, so a patient seen by
     // two doctors has one record.
     dateOfBirth: date("date_of_birth"),
     sex: patientSex("sex"),
-    dui: text("dui"),
+    dui: encryptedText("dui", "clients.dui"),
     address: text("address"),
     guardianName: text("guardian_name"),
     guardianPhone: text("guardian_phone"),
     emergencyContactName: text("emergency_contact_name"),
     emergencyContactPhone: text("emergency_contact_phone"),
     // Doctors only (can(member, "chart.clinical")).
-    allergies: text("allergies"),
-    chronicConditions: text("chronic_conditions"),
+    allergies: encryptedText("allergies", "clients.allergies"),
+    chronicConditions: encryptedText("chronic_conditions", "clients.chronic_conditions"),
     preferredPractitionerId: uuid("preferred_practitioner_id").references(() => practitioners.id, {
       onDelete: "set null",
     }),
@@ -300,8 +328,8 @@ export const messages = pgTable(
     direction: messageDirection("direction").notNull(),
     kapsoMessageId: text("kapso_message_id"),
     type: text("type").notNull(),
-    body: text("body"),
-    payload: jsonb("payload"),
+    body: encryptedText("body", "messages.body"),
+    payload: encryptedJson<unknown>("payload", "messages.payload"),
     createdAt: createdAt(),
   },
   (t) => [index("messages_client_time").on(t.clientId, t.createdAt)],
@@ -363,6 +391,82 @@ export const consents = pgTable(
     acceptedAt: timestamp("accepted_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("consents_client_version").on(t.clientId, t.noticeVersion)],
+);
+
+export type Vitals = {
+  bloodPressure?: string; // "120/80" mmHg
+  heartRate?: number; // bpm
+  temperature?: number; // °C
+  weight?: number; // kg
+  height?: number; // cm
+  spo2?: number; // %
+};
+
+// A SOAP note in the patient's expediente. A draft can be edited by its
+// doctor; signing numbers it (per patient, since the record is shared by the
+// clinic) and locks it. drizzle/0007 has the trigger that rejects any change
+// to a signed note, so even a bug can't alter one (Art. 42 g).
+export const clinicalNotes = pgTable(
+  "clinical_notes",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    practitionerId: uuid("practitioner_id")
+      .notNull()
+      .references(() => practitioners.id, { onDelete: "restrict" }),
+    appointmentId: uuid("appointment_id").references(() => appointments.id, { onDelete: "restrict" }),
+    // Set by the database when the note is signed.
+    number: integer("number"),
+    subjective: encryptedText("subjective", "clinical_notes.subjective"),
+    objective: encryptedText("objective", "clinical_notes.objective"),
+    vitals: encryptedJson<Vitals>("vitals", "clinical_notes.vitals"),
+    assessment: encryptedText("assessment", "clinical_notes.assessment"),
+    // CIE-10 codes stay in the clear so diagnoses can be searched.
+    diagnosisCodes: text("diagnosis_codes").array().notNull().default([]),
+    plan: encryptedText("plan", "clinical_notes.plan"),
+    status: noteStatus("status").notNull().default("draft"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    signedBy: uuid("signed_by").references(() => profiles.id, { onDelete: "restrict" }),
+    // SHA-256 of the signed content (see src/lib/notes.ts).
+    contentHash: text("content_hash"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("clinical_notes_number").on(t.clientId, t.number),
+    index("clinical_notes_client_time").on(t.clientId, t.createdAt),
+  ],
+);
+
+// A dated correction or addition to a signed note, by any doctor in the
+// clinic. Addenda can't be changed or deleted either.
+export const noteAddenda = pgTable(
+  "note_addenda",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    noteId: uuid("note_id")
+      .notNull()
+      .references(() => clinicalNotes.id, { onDelete: "restrict" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    practitionerId: uuid("practitioner_id").references(() => practitioners.id, { onDelete: "restrict" }),
+    body: encryptedText("body", "note_addenda.body").notNull(),
+    contentHash: text("content_hash").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("note_addenda_note").on(t.noteId, t.createdAt)],
 );
 
 // Kapso can deliver a webhook more than once; X-Idempotency-Key dedupes it.

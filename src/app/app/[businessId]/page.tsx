@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ConfirmButton } from "@/components/confirm-button";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
-import { requireBusinessAccess } from "@/lib/auth";
+import { can, requireBusinessAccess } from "@/lib/auth";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import {
   appointmentsBetween,
@@ -18,6 +18,7 @@ import {
   formatPhone,
 } from "@/lib/dashboard/labels";
 import { appointmentAction } from "./actions";
+import { startNoteAction } from "./notes-actions";
 
 type View = "day" | "week" | "list";
 type Row = Awaited<ReturnType<typeof upcomingForBusiness>>[number];
@@ -28,8 +29,10 @@ const live = new Set<string>(LIVE_APPOINTMENT_STATUSES);
 export default async function AppointmentsPage({ params, searchParams }: PageProps<"/app/[businessId]">) {
   const { businessId } = await params;
   const sp = await searchParams;
-  const { business } = await requireBusinessAccess(businessId);
+  const membership = await requireBusinessAccess(businessId);
+  const { business } = membership;
   const tz = business.timezone;
+  const consults = can(membership, "notes.write") && membership.practitionerId !== null;
   const view: View = sp.view === "week" || sp.view === "list" ? sp.view : "day";
   const today = todayIn(tz);
   const date = isDate(sp.date) ? sp.date : today;
@@ -139,7 +142,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
       ) : (
         <ul className="divide-y rounded-md border">
           {rows.map((r) => (
-            <AppointmentRow key={r.appointment.id} row={r} tz={tz} base={base} now={now} showDate={view === "list"} showDoctor={showDoctor} />
+            <AppointmentRow key={r.appointment.id} row={r} tz={tz} base={base} now={now} showDate={view === "list"} showDoctor={showDoctor} consult={consults && formatLocal(r.appointment.startsAt, tz, "yyyy-MM-dd") === today} />
           ))}
         </ul>
       )}
@@ -154,6 +157,7 @@ function AppointmentRow({
   now,
   showDate,
   showDoctor,
+  consult,
 }: {
   row: Row;
   tz: string;
@@ -161,6 +165,8 @@ function AppointmentRow({
   now: Date;
   showDate: boolean;
   showDoctor: boolean;
+  // Today's appointment, seen by a doctor: they can open a note for it.
+  consult: boolean;
 }) {
   const a = row.appointment;
   const isLive = live.has(a.status);
@@ -186,6 +192,11 @@ function AppointmentRow({
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className={`rounded px-2 py-0.5 text-xs ${appointmentTone(a)}`}>{appointmentLabel(a)}</span>
+        {consult && (isLive || a.status === "completed") && (
+          <form action={startNoteAction.bind(null, a.businessId, a.clientId, a.id)}>
+            <button className="rounded-md bg-brand px-2 py-1 text-xs text-white hover:bg-brand-hover">Iniciar consulta</button>
+          </form>
+        )}
         {isLive && !started && a.status !== "confirmed" && (
           <form action={act("confirm")}>
             <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">Confirmar</button>

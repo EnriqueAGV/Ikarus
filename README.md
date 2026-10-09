@@ -43,16 +43,24 @@ Before the agent handles anything else, a new patient gets a button message link
 Doctors and assistants sign in at `/login` and land on `/app/<business>`. Doctors also enter a code from an authenticator app (Supabase TOTP, set up at `/auth/mfa` on their first sign-in); assistants don't need one yet. Every permission check goes through `can()` in `src/lib/permissions.ts`.
 
 - **Citas**: day, week and upcoming views. The team can confirm an appointment by phone, cancel an upcoming one (this frees the slot and stops its reminders) and mark past ones as attended or no-show.
-- **Pacientes**: everyone who has written. A patient's page has their record (name, birth date, sex, DUI, address, guardian, emergency contact, preferred doctor), their WhatsApp intake answers, appointments and conversation. Allergies and chronic conditions are shown to doctors only, and so is the access log: who opened or edited the record, and when. When the agent hands a patient to the clinic it pauses for them; the team can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
+- **Pacientes**: everyone who has written. A patient's page has their record (name, birth date, sex, DUI, address, guardian, emergency contact, preferred doctor), their WhatsApp intake answers, appointments and conversation. Allergies and chronic conditions are shown to doctors only, and so are the clinical notes and the access log: who opened, edited, signed or printed the record, and when. When the agent hands a patient to the clinic it pauses for them; the team can reply from the page (within WhatsApp's 24-hour window) and resume the agent.
 - **Ajustes** (members who manage the clinic): doctors, each doctor's weekly hours and days off, services, the questions the agent asks, the reminder lead time and notes for the agent. The agent only books once there is an active doctor with hours and an active service. A new service is offered by every active doctor, and a new doctor offers every active service.
 - **Equipo** (members who manage the clinic): invite doctors or assistants by email and choose who manages the clinic. Inviting a doctor also creates their calendar. A clinic always keeps at least one manager, and a doctor who leaves keeps their calendar, inactive.
+
+## Clinical notes
+
+Doctors write SOAP notes from a patient's page (Nueva nota) or from today's appointments in Citas (Iniciar consulta). A draft has the four sections, vitals and CIE-10 diagnoses (searched by code or words, from `src/lib/cie10/catalogue.json`), saves itself while the doctor types, and only its own doctor can edit, discard or sign it. Signing gives the note the patient's next number and locks it: the trigger in `drizzle/0007_clinical_notes.sql` rejects any change or deletion of a signed note, even from code that skips the app's checks. Corrections go in addenda, which any doctor in the clinic can add and nobody can change. Each signature stores a SHA-256 hash of the content, and the note page says whether the content still matches it. "Imprimir o PDF" opens the patient's copy with the doctor's header, JVPM number and note number; the browser's print dialog saves it as PDF.
+
+## Encryption
+
+Note text, vitals, addenda, the DUI, allergies, chronic conditions, intake answers and WhatsApp messages are encrypted by the app with AES-256-GCM before they reach the database (`src/lib/crypto.ts`, applied through the column types in `src/db/schema.ts`). Names, phone numbers, birth dates and CIE-10 codes stay in the clear so they can be searched. Set `DATA_ENCRYPTION_KEYS` to `1:<key>` with a key from `openssl rand -base64 32`, in every environment that touches the database, and keep a copy somewhere safe: without it the encrypted data can't be read. To rotate, add `2:<new key>` (keeping `1:`), redeploy and click "Cifrar datos existentes" in `/admin`; the same button encrypts rows saved before encryption existed.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
 | `src/db/schema.ts` | All tables; every business-owned row has `business_id` |
-| `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor; `0006` adds doctor and assistant roles, the patient record fields, the access log and consents |
+| `drizzle/` | Migrations; `0004` moves calendars to practitioners and makes the exclusion constraint block overlapping appointments per doctor; `0006` adds doctor and assistant roles, the patient record fields, the access log and consents; `0007` adds clinical notes and addenda with the triggers that lock them |
 | `src/lib/auth.ts`, `src/lib/permissions.ts` | `requireSuperAdmin`, `requireBusinessAccess` (with the doctors' second factor) and the permission table `can()` |
 | `src/proxy.ts` | Refreshes the Supabase session, guards `/admin` and `/app` |
 | `src/lib/kapso/` | Kapso API client, webhook verification, template definitions |

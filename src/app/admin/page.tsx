@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { SignOutButton } from "@/components/signout-button";
 import { listMyBusinesses, requireSuperAdmin } from "@/lib/auth";
-import { registerProjectWebhookAction } from "./actions";
+import { encryptExistingAction, registerProjectWebhookAction } from "./actions";
 
 const statusLabel = {
   invited: "Esperando WhatsApp",
@@ -19,8 +19,14 @@ const webhookNotice: Record<string, string> = {
 export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
   const profile = await requireSuperAdmin();
   const businesses = await listMyBusinesses(profile);
-  const { webhook } = await searchParams;
+  const { webhook, encrypted } = await searchParams;
   const notice = typeof webhook === "string" ? webhookNotice[webhook] : null;
+  const encryptNotice =
+    typeof encrypted !== "string"
+      ? null
+      : encrypted === "failed"
+        ? "No se pudieron cifrar los datos. Revisa DATA_ENCRYPTION_KEYS."
+        : `Listo: ${encrypted} filas cifradas con la clave actual.`;
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">
@@ -59,6 +65,11 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         </form>
         <span>Hazlo una vez, y de nuevo si cambia la URL de la app, para que las conexiones nuevas lleguen a Praxia.</span>
         {notice && <span className="w-full text-neutral-700 dark:text-neutral-300">{notice}</span>}
+        <form action={encryptExistingAction}>
+          <button className="underline">Cifrar datos existentes</button>
+        </form>
+        <span>Cifra pacientes y mensajes guardados antes del cifrado o con una clave anterior. Se puede repetir sin riesgo.</span>
+        {encryptNotice && <span className="w-full text-neutral-700 dark:text-neutral-300">{encryptNotice}</span>}
       </footer>
     </main>
   );
