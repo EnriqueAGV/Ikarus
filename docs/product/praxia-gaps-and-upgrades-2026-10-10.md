@@ -2,11 +2,13 @@
 
 Updated: 10 October 2026
 
-This document replaces the status assessment in “Praxia: gaps and upgrades” dated 9 October. It combines that backlog with the repository implementation and [PR #28](https://github.com/EnriqueAGV/Ikarus/pull/28), which GitHub reports as merged on 10 October 2026.
+This document replaces the status assessment in “Praxia: gaps and upgrades” dated 9 October. It combines that backlog with repository implementation and merged history through [PR #30](https://github.com/EnriqueAGV/Ikarus/pull/30). [PR #31](https://github.com/EnriqueAGV/Ikarus/pull/31) contains the implemented animation follow-up and is pending merge as of this review.
 
 ## Current assessment
 
 Dashboard booking and billing are implemented. They are no longer the largest missing features. The patient directory, human-response queue and patient detail have also received substantial workflow improvements, with the original soft visual style preserved.
+
+Live dashboard updates and fallback polling are implemented in merged PR #30. Do not schedule them as new implementation work. Animation feedback is already implemented in PR #31; its remaining work is merge and rollout, rather than rebuilding the feature. Neither change closes any of the numbered OPS-01–OPS-08 or PROD-01–PROD-07 items below.
 
 The highest-priority remaining work is deployment isolation, launch documentation and operational reliability. Voice notes and unsupported attachments are the next important patient-facing improvements. Waitlists, automated after-visit messages and self-service onboarding can follow the initial clinic rollout.
 
@@ -18,6 +20,7 @@ The highest-priority remaining work is deployment isolation, launch documentatio
 | --- | --- |
 | Implemented | The feature exists in the reviewed code and merged history. |
 | Improved in PR #28 | An existing feature received workflow, correctness or presentation improvements. |
+| Implemented; pending merge | The feature exists in a reviewed PR; merging and rollout remain. Do not start a duplicate implementation. |
 | Partial | Supporting behavior exists, but the full requested outcome is incomplete or unverified. |
 | Pending | The original item remains open. |
 | Configuration unverified | Completion depends on settings or operational evidence outside the repository. |
@@ -43,12 +46,22 @@ The earlier PR references below follow the supplied backlog and local merged his
 | Clinic reporting | Monthly appointment, no-show, booking and patient numbers in “Números.” | PR #24. This does not provide provider-token costs or margin per clinic. |
 | Clinic location | Map coordinates from clinic settings, with location messaging after booking and when directions are requested. | PR #24. |
 | Human handoff | “Por responder” queue for the clinic team. | PR #24; correctness and daily workflow improved substantially in PR #28. |
+| Live dashboard updates | Patient registration and appointment creation, changes and cancellations update open dashboard pages automatically. Patient, appointment, blocked-hour and message changes also refresh affected queue and conversation views. | Merged [PR #30](https://github.com/EnriqueAGV/Ikarus/pull/30); migration `0015_dashboard_realtime`. Private clinic channels carry empty notifications; records still load through server authorization. |
+| Background polling and recovery | Visible tabs periodically reconcile missed changes and catch up after reconnecting, focus or returning to the tab. | PR #30: every 60 seconds while connected, every 30 seconds while disconnected; hidden tabs defer server refreshes until visible. Implementation is complete. |
 | Booking conversation | Assistant offers available times instead of always asking the patient for a date first. | [PR #22](https://github.com/EnriqueAGV/Ikarus/pull/22). |
 | LLM resilience | A stuck LLM request has a default 30-second timeout per attempt, with retries. | [PR #20](https://github.com/EnriqueAGV/Ikarus/pull/20). This is not a 30-second end-to-end reply guarantee. |
-| CI | Pull-request and main-push workflow runs migrations, type generation, TypeScript, lint, tests and build against disposable Postgres. | PR #23; [workflow](../../.github/workflows/ci.yml). |
+| CI | Pull-request and main-push workflow runs migrations, type generation, TypeScript, lint, tests and build against disposable Postgres, with test-only Supabase Auth/Realtime fixtures. | PR #23 and PR #30; [workflow](../../.github/workflows/ci.yml). Local test isolation does not establish Vercel preview isolation under OPS-01. |
 | HTTP security | HSTS, frame protection, MIME-sniffing protection, referrer policy and permissions policy. | PR #23; [configuration](../../next.config.ts). |
 | Database transport | Application and migration connection helpers default non-local database URLs to `sslmode=require`, unless an explicit SSL mode is already supplied. | [TLS helper](../../src/db/tls.ts). The original document reports Supabase Enforce SSL enabled; that external setting was not rechecked. |
 | Dashboard appearance | Soft surfaces, pill controls, quieter secondary actions and restrained visual hierarchy. | [PR #25](https://github.com/EnriqueAGV/Ikarus/pull/25), agenda refinements in [PR #26](https://github.com/EnriqueAGV/Ikarus/pull/26) and [PR #27](https://github.com/EnriqueAGV/Ikarus/pull/27), and PR #28. |
+
+## Implemented follow-up pending merge
+
+| Area | Status and existing implementation | Remaining action |
+| --- | --- | --- |
+| Live-update animation | Implemented in [PR #31](https://github.com/EnriqueAGV/Ikarus/pull/31): new rows fade and slide in, changed rows briefly highlight blue, and neighboring rows move into place. Covers the patient directory, day/week/upcoming agenda views and appointments within patient records. Initial renders and unchanged refreshes stay still; reduced-motion preferences disable the effects. | Merge and roll out PR #31, then verify the behavior in the deployed application. Do not implement a second version. |
+
+PR #30 validation: 164 tests passed against fresh disposable PostgreSQL 16, including broadcast/authorization integration tests; migrations, TypeScript, lint and production build passed. GitHub CI and Vercel preview also passed. PR #31 validation: browser checks using the actual component with sample data covered new rows, confirmation/cancellation highlights, removal layout movement and unchanged refreshes; typecheck, lint, build, GitHub CI and Vercel preview passed. These checks do not establish real-patient Supabase WebSocket behavior or preview/production database isolation.
 
 ## What PR #28 delivered
 
@@ -125,10 +138,10 @@ Media qualification: the dashboard's “audio/image/document received” labels 
 - **Deployment:** identify who owns preview isolation, production migrations and rollout verification.
 - **Operational ownership:** identify who receives failure alerts and who leads an incident or restoration.
 - **Document ownership:** assign the person responsible for vendor records, reviewed legal documents and the rollout checklist.
-- **Pilot measurement:** measure response time, failed sends, identity mistakes and front-desk task completion. Assignment, background polling and advanced queue filters remain research-driven enhancements.
+- **Pilot measurement:** measure response time, failed sends, identity mistakes and front-desk task completion. Assignment and advanced queue filters remain research-driven enhancements. Background polling and live updates are implemented in merged PR #30; only operational verification remains. Animation feedback is implemented in PR #31, pending merge and rollout.
 
 ## Evidence and maintenance
 
-Sources: the supplied 9 October gaps document, local repository files and merged history through the PR #28 head commit `d3ce8bd`, GitHub metadata confirming PR #28's merge, and the [UX/UI audit](../audits/ux-ui-audit-2026-10-10.md) and implementation report.
+Sources: the supplied 9 October gaps document, local repository files, merged history through PR #30 (merge commit `b2aecfc`), PR #31 animation commit `04e1788` (pending merge), recorded CI/Vercel results and browser verification, and the [UX/UI audit](../audits/ux-ui-audit-2026-10-10.md) and implementation report.
 
 External deployment credentials, SMTP settings, provider contracts, backup history and legal requirements were not verified. Update an item's status when its completion evidence exists; record the PR or operational evidence and date. Keep implementation status separate from production verification so a merged feature is not mistaken for a tested live service.
