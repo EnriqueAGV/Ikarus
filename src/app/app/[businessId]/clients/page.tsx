@@ -83,6 +83,9 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
                   <div className="text-sm text-neutral-500">{formatPhone(client.waPhone)}</div>
                 </div>
                 <div className="flex items-center gap-3 text-sm text-neutral-500">
+                  {client.mergedIntoId && (
+                    <span className="rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-900">Unido a otro expediente</span>
+                  )}
                   {client.agentPaused && (
                     <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                       Esperando al equipo

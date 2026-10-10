@@ -158,6 +158,8 @@ type BookInput = {
   localStart: string;
   // Omitted: any doctor who offers the service and is free then.
   practitionerId?: string | null;
+  // For the monthly numbers.
+  bookedBy?: "assistant" | "staff";
   now?: Date;
 };
 
@@ -199,6 +201,7 @@ async function bookInTx(tx: Tx, input: BookInput, rescheduledFromId?: string): P
         startsAt,
         endsAt: new Date(startsAt.getTime() + slot.durationMin * 60_000),
         rescheduledFromId,
+        bookedBy: input.bookedBy ?? null,
       })
       .returning();
     return { ok: true, appointment };
@@ -305,7 +308,14 @@ async function reschedule(
         .where(eq(schema.appointments.id, old.id));
       const booked = await bookInTx(
         tx,
-        { ...input, clientId: old.clientId, serviceId: old.serviceId, practitionerId: input.practitionerId || old.practitionerId },
+        {
+          ...input,
+          clientId: old.clientId,
+          serviceId: old.serviceId,
+          practitionerId: input.practitionerId || old.practitionerId,
+          // A moved appointment still counts as booked by whoever booked it.
+          bookedBy: old.bookedBy ?? undefined,
+        },
         old.id,
       );
       if (!booked.ok) throw new KeepOriginal(booked);

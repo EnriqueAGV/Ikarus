@@ -3,6 +3,7 @@ import {
   boolean,
   customType,
   date,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -56,6 +57,12 @@ export const accessAction = pgEnum("access_action", [
   "print_note",
   "archive_patient",
   "restore_patient",
+  "merge_patient",
+  "create_prescription",
+  "print_prescription",
+  "upload_attachment",
+  "view_attachment",
+  "delete_attachment",
 ]);
 export const noteStatus = pgEnum("note_status", ["draft", "signed"]);
 export const businessStatus = pgEnum("business_status", [
@@ -88,6 +95,8 @@ export const appointmentStatus = pgEnum("appointment_status", [
 ]);
 // What happens when a patient never answers the reminder and its follow-up.
 export const reminderEndPolicy = pgEnum("reminder_end_policy", ["escalate", "auto_cancel"]);
+// Who booked an appointment, for the monthly numbers. Null before it was recorded.
+export const bookingSource = pgEnum("booking_source", ["assistant", "staff"]);
 export const messageDirection = pgEnum("message_direction", [
   "inbound",
   "outbound",
@@ -130,6 +139,12 @@ export const businesses = pgTable(
     faq: text("faq"),
     // A WhatsApp message offering a new time after a missed appointment.
     noShowFollowUp: boolean("no_show_follow_up").notNull().default(true),
+    // Where the clinic is, from a Google Maps link pasted in Ajustes. The
+    // assistant sends it as a WhatsApp location pin.
+    mapsUrl: text("maps_url"),
+    locationLat: doublePrecision("location_lat"),
+    locationLng: doublePrecision("location_lng"),
+    locationAddress: text("location_address"),
     // Billing, by bank transfer: a free trial, then paid months. See
     // src/lib/billing.ts for when the assistant and reminders stop.
     trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
@@ -339,6 +354,9 @@ export const clients = pgTable(
     // kept, since the record and its access log can't be deleted. A holder
     // who writes again comes back.
     archivedAt: timestamp("archived_at", { withTimezone: true }),
+    // A duplicate merged into another record: archived, with its signed
+    // notes and access log kept here and shown on the record it joined.
+    mergedIntoId: uuid("merged_into_id").references((): AnyPgColumn => clients.id, { onDelete: "restrict" }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -378,6 +396,7 @@ export const appointments = pgTable(
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancelReason: text("cancel_reason"),
     rescheduledFromId: uuid("rescheduled_from_id"),
+    bookedBy: bookingSource("booked_by"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -537,6 +556,70 @@ export const noteAddenda = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("note_addenda_note").on(t.noteId, t.createdAt)],
+);
+
+export type PrescriptionItem = {
+  drug: string; // name and strength, e.g. "Amoxicilina 500 mg"
+  dose: string | null; // "1 cápsula"
+  frequency: string | null; // "cada 8 horas"
+  duration: string | null; // "7 días"
+};
+
+// A receta, issued by one doctor for one patient, usually at a visit. Like a
+// signed note it never changes once issued; a new one replaces it.
+export const prescriptions = pgTable(
+  "prescriptions",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    practitionerId: uuid("practitioner_id")
+      .notNull()
+      .references(() => practitioners.id, { onDelete: "restrict" }),
+    appointmentId: uuid("appointment_id").references(() => appointments.id, { onDelete: "restrict" }),
+    items: encryptedJson<PrescriptionItem[]>("items", "prescriptions.items").notNull(),
+    instructions: encryptedText("instructions", "prescriptions.instructions"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("prescriptions_client_time").on(t.clientId, t.createdAt)],
+);
+
+export const attachmentKind = pgEnum("attachment_kind", ["lab", "image", "other"]);
+
+// A lab result, image or other document on a patient's record. The file is
+// encrypted by the app before it goes to Supabase Storage, and its name is
+// encrypted here, since both can identify the patient.
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: id(),
+    businessId: uuid("business_id")
+      .notNull()
+      .references(() => businesses.id, { onDelete: "restrict" }),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "restrict" }),
+    appointmentId: uuid("appointment_id").references(() => appointments.id, { onDelete: "restrict" }),
+    kind: attachmentKind("kind").notNull().default("other"),
+    fileName: encryptedText("file_name", "attachments.file_name").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    storagePath: text("storage_path").notNull().unique(),
+    uploadedBy: uuid("uploaded_by")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    // Removed from the record. The row stays for the access log.
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("attachments_client_time").on(t.clientId, t.createdAt)],
 );
 
 // Browsers where a doctor or clinic manager confirmed a code sent to their

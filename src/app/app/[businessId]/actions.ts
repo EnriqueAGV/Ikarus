@@ -343,6 +343,8 @@ export async function saveGeneralAction(businessId: string, form: FormData) {
       reminderEndPolicy: form.get("reminderEndPolicy") === "auto_cancel" ? "auto_cancel" : "escalate",
       faq: str(form, "faq"),
       noShowFollowUp: checked(form, "noShowFollowUp"),
+      mapsUrl: str(form, "mapsUrl"),
+      locationAddress: str(form, "locationAddress"),
     }),
   );
 }

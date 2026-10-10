@@ -462,6 +462,39 @@ describe("when the agent can't answer", () => {
     expect(system).toContain("Clinic information (written by the practice; the only source for questions about it):\nParqueo gratis frente a la clínica.");
   });
 
+  it("sends the clinic's map pin after a booking and when asked how to get there", async () => {
+    await db
+      .update(schema.businesses)
+      .set({ locationLat: 13.6929, locationLng: -89.2182, locationAddress: "Paseo General Escalón 123" })
+      .where(eq(schema.businesses.id, business.id));
+    await receive("¿Dónde quedan? Y quiero cita mañana a las 10");
+    const client = await theClient();
+    await db.update(schema.clients).set({ name: "Ana López", dui: "01234567-8", data: { fecha_nacimiento: "1990-05-04" } }).where(eq(schema.clients.id, client.id));
+    const claude = fakeLlm([
+      { tools: [{ name: "send_location", input: {} }, { name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00" } }] },
+      { text: "Listo, la esperamos mañana a las 10:00." },
+    ]);
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+    const sends = kapso.calls.filter((c) => c.path.endsWith("/messages") && !isTyping(c.body)).map((c) => c.body as { type: string });
+    // The reply first, then one pin, even though both tools asked for it.
+    expect(sends.map((b) => b.type)).toEqual(["text", "location"]);
+    expect(sends[1]).toMatchObject({
+      location: { latitude: 13.6929, longitude: -89.2182, name: "Estética Luna", address: "Paseo General Escalón 123" },
+    });
+    const out = await db.select().from(schema.messages).where(eq(schema.messages.direction, "outbound"));
+    expect(out.map((m) => m.type)).toEqual(expect.arrayContaining(["text", "location"]));
+    const [appt] = await db.select().from(schema.appointments);
+    expect(appt.bookedBy).toBe("assistant");
+  });
+
+  it("says there is no pin when the clinic hasn't set its location", async () => {
+    await receive("¿Dónde quedan?");
+    const claude = fakeLlm([{ tools: [{ name: "send_location", input: {} }] }, { text: "Le paso su consulta al equipo." }]);
+    await runAgent({ businessId: business.id, clientId: (await theClient()).id, now: NOW, llm: claude.client });
+    expect(lastToolResults(claude.requests[1])[0].error).toBe(true);
+    expect(kapso.calls.some((c) => (c.body as { type?: string })?.type === "location")).toBe(false);
+  });
+
   it("sends the holding reply once and hands the conversation to the team", async () => {
     await receive("Si");
     const client = await theClient();

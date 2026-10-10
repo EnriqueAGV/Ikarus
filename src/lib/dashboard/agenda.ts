@@ -43,7 +43,7 @@ export async function bookForPatient(input: {
   now?: Date;
 }): Promise<StaffBookingResult> {
   await requirePatient(input.business.id, input.clientId);
-  const booked = await bookAppointment(input);
+  const booked = await bookAppointment({ ...input, bookedBy: "staff" });
   if (!booked.ok || !input.notify) return booked;
   return { ...booked, notice: await notifyBooked(booked.appointment.id) };
 }
