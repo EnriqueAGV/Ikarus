@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # A throwaway database for the integration tests; never a real one.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ikarus
+          POSTGRES_PASSWORD: ikarus
+          POSTGRES_DB: ikarus_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ikarus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      DATABASE_URL: postgres://ikarus:ikarus@localhost:5432/ikarus_test
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: anon
+      SUPABASE_SERVICE_ROLE_KEY: service
+      KAPSO_API_KEY: kapso-test-key
+      KAPSO_PROJECT_WEBHOOK_SECRET: project-secret
+      KAPSO_MESSAGE_WEBHOOK_SECRET: message-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npx next typegen
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
