@@ -150,6 +150,8 @@ export function WeekGrid({
                 return (
                   <Link
                     key={p.id}
+                    data-live-row={`grid:${p.id}`}
+                    data-live-version={r.appointment.status}
                     href={`${base}/clients/${r.appointment.clientId}`}
                     title={`${range} · ${name} · ${r.serviceName}${showDoctor ? ` · ${r.practitionerName}` : ""}`}
                     style={style}
