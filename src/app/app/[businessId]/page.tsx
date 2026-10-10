@@ -24,6 +24,7 @@ import {
 } from "@/lib/dashboard/labels";
 import { addTimeBlockAction, appointmentAction, removeTimeBlockAction } from "./actions";
 import { startNoteAction } from "./notes-actions";
+import { WeekGrid } from "./week-grid";
 
 type View = "day" | "week" | "list";
 type Row = Awaited<ReturnType<typeof upcomingForBusiness>>[number];
@@ -156,60 +157,77 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
       </div>
 
       {view === "week" ? (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
-          {Array.from({ length: 7 }, (_, i) => shiftDate(from, i)).map((d) => {
-            const dayRows = rows.filter((r) => localDay(r.appointment.startsAt) === d);
-            const dayBlocks = blocks.filter(({ block }) => localDay(block.startsAt) === d);
-            const h = hours.get(d);
-            return (
-              <section key={d} className={`card flex flex-col p-3 ${d === today ? "ring-2 ring-brand/30" : ""} ${h && !h.open ? "bg-neutral-50" : ""}`}>
-                <Link href={href("day", d)} className="mb-2 block hover:underline">
-                  <span className="block text-xs font-semibold capitalize">{formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}</span>
-                  <span className="block text-[11px] text-neutral-500">{hoursLabel(h)}</span>
-                </Link>
-                <ul className="flex flex-col gap-1">
-                  {dayItems(dayRows, dayBlocks).map((item) => {
-                    if (item.kind === "block") {
-                      const { block, practitionerName } = item;
+        <>
+          <div className="hidden md:block">
+            <WeekGrid
+              days={Array.from({ length: 7 }, (_, i) => shiftDate(from, i))}
+              rows={rows}
+              blocks={blocks}
+              hours={hours}
+              tz={tz}
+              base={base}
+              today={today}
+              now={now}
+              showDoctor={showDoctor}
+              dayHref={(d) => href("day", d)}
+            />
+          </div>
+          {/* On a phone the week stays a list of days. */}
+          <div className="grid grid-cols-1 gap-3 md:hidden">
+            {Array.from({ length: 7 }, (_, i) => shiftDate(from, i)).map((d) => {
+              const dayRows = rows.filter((r) => localDay(r.appointment.startsAt) === d);
+              const dayBlocks = blocks.filter(({ block }) => localDay(block.startsAt) === d);
+              const h = hours.get(d);
+              return (
+                <section key={d} className={`card flex flex-col p-3 ${d === today ? "ring-2 ring-brand/30" : ""} ${h && !h.open ? "bg-neutral-50" : ""}`}>
+                  <Link href={href("day", d)} className="mb-2 block hover:underline">
+                    <span className="block text-xs font-semibold capitalize">{formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}</span>
+                    <span className="block text-[11px] text-neutral-500">{hoursLabel(h)}</span>
+                  </Link>
+                  <ul className="flex flex-col gap-1">
+                    {dayItems(dayRows, dayBlocks).map((item) => {
+                      if (item.kind === "block") {
+                        const { block, practitionerName } = item;
+                        return (
+                          <li key={block.id} className="rounded-lg border border-dashed px-2 py-1.5 text-xs text-neutral-500">
+                            <span className="block font-medium tabular-nums">
+                              {formatLocal(block.startsAt, tz, "HH:mm")}–{formatLocal(block.endsAt, tz, "HH:mm")}
+                            </span>
+                            Bloqueado{block.note && ` · ${block.note}`}
+                            {showDoctor && ` · ${practitionerName}`}
+                          </li>
+                        );
+                      }
+                      const r = item.row;
+                      const name = r.clientName ?? formatPhone(r.clientPhone);
                       return (
-                        <li key={block.id} className="rounded-lg border border-dashed px-2 py-1.5 text-xs text-neutral-500">
-                          <span className="block font-medium tabular-nums">
-                            {formatLocal(block.startsAt, tz, "HH:mm")}–{formatLocal(block.endsAt, tz, "HH:mm")}
-                          </span>
-                          Bloqueado{block.note && ` · ${block.note}`}
-                          {showDoctor && ` · ${practitionerName}`}
+                        <li key={r.appointment.id}>
+                          <Link
+                            href={`${base}/clients/${r.appointment.clientId}`}
+                            title={`${name} · ${r.serviceName}`}
+                            className={`block rounded-lg px-2 py-1.5 text-xs ${appointmentTone(r.appointment)}`}
+                          >
+                            <span className="block font-semibold tabular-nums">
+                              {formatLocal(r.appointment.startsAt, tz, "HH:mm")}–{formatLocal(r.appointment.endsAt, tz, "HH:mm")}
+                            </span>
+                            <span className="block line-clamp-2 break-words">{name}</span>
+                            <span className="block truncate opacity-70">
+                              {r.serviceName}
+                              {showDoctor && ` · ${r.practitionerName}`}
+                            </span>
+                          </Link>
                         </li>
                       );
-                    }
-                    const r = item.row;
-                    const name = r.clientName ?? formatPhone(r.clientPhone);
-                    return (
-                      <li key={r.appointment.id}>
-                        <Link
-                          href={`${base}/clients/${r.appointment.clientId}`}
-                          title={`${name} · ${r.serviceName}`}
-                          className={`block rounded-lg px-2 py-1.5 text-xs ${appointmentTone(r.appointment)}`}
-                        >
-                          <span className="block font-semibold tabular-nums">
-                            {formatLocal(r.appointment.startsAt, tz, "HH:mm")}–{formatLocal(r.appointment.endsAt, tz, "HH:mm")}
-                          </span>
-                          <span className="block line-clamp-2 break-words">{name}</span>
-                          <span className="block truncate opacity-70">
-                            {r.serviceName}
-                            {showDoctor && ` · ${r.practitionerName}`}
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                  {dayRows.length === 0 && dayBlocks.length === 0 && (
-                    <li className="text-xs text-neutral-400">{h && !h.open ? h.note ?? "Cerrado" : "Sin citas"}</li>
-                  )}
-                </ul>
-              </section>
-            );
-          })}
-        </div>
+                    })}
+                    {dayRows.length === 0 && dayBlocks.length === 0 && (
+                      <li className="text-xs text-neutral-400">{h && !h.open ? h.note ?? "Cerrado" : "Sin citas"}</li>
+                    )}
+                  </ul>
+                </section>
+              );
+            })}
+          </div>
+        </>
       ) : view === "list" ? (
         rows.length === 0 ? (
           <p className="card p-8 text-center text-sm text-neutral-500">No hay citas próximas.</p>
