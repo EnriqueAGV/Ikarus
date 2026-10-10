@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertDeploymentIsolation } from "./deploy-isolation.mjs";
 
 const schema = z.object({
   DATABASE_URL: z.string().url(),
@@ -33,5 +34,8 @@ const schema = z.object({
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
 });
+
+// A preview deployment never starts against the production database.
+assertDeploymentIsolation(process.env);
 
 export const env = schema.parse(process.env);
