@@ -124,7 +124,25 @@ export async function blocksBetween(businessId: string, from: Date, to: Date) {
     .orderBy(asc(schema.timeBlocks.startsAt));
 }
 
-export type DayHours = { open: boolean; from: string | null; to: string | null; note: string | null };
+export type DayHours = {
+  open: boolean;
+  from: string | null;
+  to: string | null;
+  // Every doctor's hours that day, merged where they overlap.
+  windows: Array<[string, string]>;
+  note: string | null;
+};
+
+// Overlapping or touching "HH:mm" ranges as one.
+export function mergeWindows(windows: Array<[string, string]>): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const [start, end] of [...windows].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const last = out.at(-1);
+    if (last && start <= last[1]) last[1] = end > last[1] ? end : last[1];
+    else out.push([start, end]);
+  }
+  return out;
+}
 
 // When the clinic is open on each local date in [fromDate, toDate], across its
 // active doctors: the earliest start and latest end, or closed with the note
@@ -167,9 +185,10 @@ export async function openingHours(businessId: string, fromDate: string, toDate:
             open: true,
             from: windows.map((w) => w[0]).sort()[0],
             to: windows.map((w) => w[1]).sort().at(-1)!,
+            windows: mergeWindows(windows),
             note: null,
           }
-        : { open: false, from: null, to: null, note },
+        : { open: false, from: null, to: null, windows: [], note },
     );
   }
   return out;
