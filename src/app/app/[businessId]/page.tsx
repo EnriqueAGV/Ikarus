@@ -1,3 +1,4 @@
+import { fromZonedTime } from "date-fns-tz";
 import Link from "next/link";
 import { ConfirmButton } from "@/components/confirm-button";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
@@ -11,13 +12,16 @@ import {
   upcomingForBusiness,
   weekStart,
 } from "@/lib/dashboard/appointments";
+import { blocksBetween } from "@/lib/dashboard/agenda";
 import {
   appointmentLabel,
   appointmentTone,
   formatLocal,
   formatPhone,
+  noticeLabel,
+  settingsErrorLabel,
 } from "@/lib/dashboard/labels";
-import { appointmentAction } from "./actions";
+import { addTimeBlockAction, appointmentAction, removeTimeBlockAction } from "./actions";
 import { startNoteAction } from "./notes-actions";
 
 type View = "day" | "week" | "list";
@@ -43,8 +47,21 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   const days = view === "week" ? 7 : 1;
   const rows =
     view === "list" ? await upcomingForBusiness(business.id) : await appointmentsBetween(business, from, shiftDate(from, days));
+  const blocks = view === "day" ? await blocksBetween(business.id, fromZonedTime(`${date}T00:00:00`, tz), fromZonedTime(`${shiftDate(date, 1)}T00:00:00`, tz)) : [];
+  const doctors = await listPractitioners(business.id, { activeOnly: true });
   // The doctor only shows once the clinic has a second one.
-  const showDoctor = (await listPractitioners(business.id)).length > 1;
+  const showDoctor = doctors.length > 1;
+  const one = (v: string | string[] | undefined) => (typeof v === "string" ? v : "");
+  const error = one(sp.error) ? settingsErrorLabel[one(sp.error)] ?? "Algo salió mal." : null;
+  const success = one(sp.booked)
+    ? one(sp.notified)
+      ? "Cita agendada. Le avisamos al paciente por WhatsApp."
+      : one(sp.notice)
+        ? `Cita agendada, pero no se le avisó al paciente: ${noticeLabel[one(sp.notice)] ?? "no se pudo enviar el mensaje."}`
+        : "Cita agendada."
+    : one(sp.blocked)
+      ? "Horario bloqueado."
+      : null;
   const toCall = await needingCall(business.id);
   const now = new Date();
 
@@ -68,17 +85,28 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           </ul>
         </section>
       )}
+      {success && (
+        <p className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+          {success}
+        </p>
+      )}
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-md border p-0.5 text-sm">
-          {(["day", "week", "list"] as const).map((v) => (
-            <Link
-              key={v}
-              href={href(v)}
-              className={`rounded px-3 py-1 ${view === v ? "bg-brand text-white" : ""}`}
-            >
-              {{ day: "Día", week: "Semana", list: "Próximas" }[v]}
-            </Link>
-          ))}
+        <div className="flex items-center gap-2">
+          <Link href={`${base}/appointments/new`} className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
+            Nueva cita
+          </Link>
+          <div className="flex gap-1 rounded-md border p-0.5 text-sm">
+            {(["day", "week", "list"] as const).map((v) => (
+              <Link
+                key={v}
+                href={href(v)}
+                className={`rounded px-3 py-1 ${view === v ? "bg-brand text-white" : ""}`}
+              >
+                {{ day: "Día", week: "Semana", list: "Próximas" }[v]}
+              </Link>
+            ))}
+          </div>
         </div>
         {view !== "list" && (
           <div className="flex items-center gap-2 text-sm">
@@ -146,6 +174,68 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           ))}
         </ul>
       )}
+
+      {view === "day" && doctors.length > 0 && (
+        <section id="bloqueos" className="flex flex-col gap-2 rounded-md border p-4">
+          <h2 className="text-sm font-medium">Horarios bloqueados</h2>
+          <p className="text-xs text-neutral-500">
+            Un horario bloqueado no se ofrece a los pacientes, ni por WhatsApp ni al agendar aquí. Las citas que ya
+            estaban agendadas se quedan.
+          </p>
+          {blocks.length > 0 && (
+            <ul className="divide-y text-sm">
+              {blocks.map(({ block, practitionerName }) => (
+                <li key={block.id} className="flex items-center justify-between gap-3 py-2">
+                  <span>
+                    <span className="font-medium">
+                      {formatLocal(block.startsAt, tz, "HH:mm")}–{formatLocal(block.endsAt, tz, "HH:mm")}
+                    </span>
+                    {showDoctor && ` · ${practitionerName}`}
+                    {block.note && <span className="text-neutral-500"> · {block.note}</span>}
+                  </span>
+                  <form action={removeTimeBlockAction.bind(null, business.id, block.id, date)}>
+                    <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                      Quitar
+                    </button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form action={addTimeBlockAction.bind(null, business.id)} className="flex flex-wrap items-end gap-2 text-sm">
+            <input type="hidden" name="date" value={date} />
+            {showDoctor ? (
+              <label className="flex flex-col gap-1 text-xs text-neutral-500">
+                Doctor
+                <select name="practitionerId" className="rounded-md border px-2 py-1 text-sm">
+                  {doctors.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <input type="hidden" name="practitionerId" value={doctors[0].id} />
+            )}
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Desde
+              <input type="time" name="startTime" required className="rounded-md border px-2 py-1 text-sm" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Hasta
+              <input type="time" name="endTime" required className="rounded-md border px-2 py-1 text-sm" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Nota (opcional)
+              <input name="note" placeholder="Almuerzo, cirugía…" className="rounded-md border px-2 py-1 text-sm" />
+            </label>
+            <button className="rounded-md border px-3 py-1 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
+              Bloquear horario
+            </button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }
@@ -211,6 +301,14 @@ function AppointmentRow({
               <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">No asistió</button>
             </form>
           </>
+        )}
+        {isLive && !started && (
+          <Link
+            href={`${base}/appointments/${a.id}/reschedule`}
+            className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          >
+            Mover
+          </Link>
         )}
         {isLive && !started && (
           <form action={act("cancel")}>

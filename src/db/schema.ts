@@ -234,6 +234,22 @@ export const availabilityExceptions = pgTable(
   (t) => [index("availability_exceptions_practitioner").on(t.practitionerId, t.date)],
 );
 
+// Time a doctor is away within a working day (a meeting, a procedure, an
+// errand). Free slots skip it like an appointment.
+export const timeBlocks = pgTable(
+  "time_blocks",
+  {
+    id: id(),
+    businessId: businessId(),
+    practitionerId: practitionerId(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("time_blocks_practitioner_time").on(t.practitionerId, t.startsAt)],
+);
+
 // What the agent must collect from a new client, configured per business.
 export const intakeFields = pgTable(
   "intake_fields",

@@ -27,13 +27,16 @@ import {
   type PractitionerInput,
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
+import { addTimeBlock, AgendaError, bookForPatient, moveAppointment, removeTimeBlock, type StaffBookingResult } from "@/lib/dashboard/agenda";
 import { createPatient, PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
 import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
+import { formatLocal } from "@/lib/dashboard/labels";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
 const int = (form: FormData, key: string) => Number.parseInt(str(form, key), 10);
 const checked = (form: FormData, key: string) => form.get(key) === "on";
+const nullable = (form: FormData, key: string) => str(form, key) || null;
 
 // Runs a settings change and comes back to the settings page with the outcome,
 // on the same doctor's calendar when there is one.
@@ -62,6 +65,79 @@ export async function appointmentAction(businessId: string, appointmentId: strin
   revalidatePath(`/app/${businessId}`, "layout");
 }
 
+// After booking or moving: the agenda on that day, saying whether the patient
+// was told on WhatsApp. On failure, back to the slot picker with the reason.
+function afterBooking(businessId: string, result: StaffBookingResult, back: string, timezone: string): never {
+  if (!result.ok) {
+    const page = back.startsWith(`/app/${businessId}/`) ? back : `/app/${businessId}`;
+    redirect(`${page}${page.includes("?") ? "&" : "?"}error=${result.reason}`);
+  }
+  const date = result.appointment.startsAt;
+  const notice = !result.notice ? "" : result.notice.notified ? "&notified=1" : `&notice=${result.notice.reason}`;
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}?view=day&date=${formatLocal(date, timezone, "yyyy-MM-dd")}&booked=${result.appointment.id}${notice}`);
+}
+
+export async function bookForPatientAction(
+  businessId: string,
+  clientId: string,
+  serviceId: string,
+  practitionerId: string | null,
+  localStart: string,
+  back: string,
+  form: FormData,
+) {
+  const { business } = await requireBusinessAccess(businessId);
+  let result: StaffBookingResult;
+  try {
+    result = await bookForPatient({ business, clientId, serviceId, practitionerId, localStart, notify: checked(form, "notify") });
+  } catch (err) {
+    if (!(err instanceof AgendaError)) throw err;
+    result = { ok: false, reason: "not_found" };
+  }
+  afterBooking(businessId, result, back, business.timezone);
+}
+
+export async function moveAppointmentAction(
+  businessId: string,
+  appointmentId: string,
+  practitionerId: string | null,
+  localStart: string,
+  back: string,
+  form: FormData,
+) {
+  const { business } = await requireBusinessAccess(businessId);
+  const result = await moveAppointment({ business, appointmentId, practitionerId, localStart, notify: checked(form, "notify") });
+  afterBooking(businessId, result, back, business.timezone);
+}
+
+export async function addTimeBlockAction(businessId: string, form: FormData) {
+  const { business } = await requireBusinessAccess(businessId);
+  const date = str(form, "date");
+  let outcome = "blocked=1";
+  try {
+    await addTimeBlock(business, {
+      practitionerId: str(form, "practitionerId"),
+      date,
+      startTime: str(form, "startTime"),
+      endTime: str(form, "endTime"),
+      note: nullable(form, "note"),
+    });
+  } catch (err) {
+    if (!(err instanceof AgendaError)) throw err;
+    outcome = `error=${err.code}`;
+  }
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}?view=day&date=${encodeURIComponent(date)}&${outcome}#bloqueos`);
+}
+
+export async function removeTimeBlockAction(businessId: string, blockId: string, date: string) {
+  await requireBusinessAccess(businessId);
+  await removeTimeBlock(businessId, blockId);
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}?view=day&date=${encodeURIComponent(date)}#bloqueos`);
+}
+
 export async function setAgentPausedAction(businessId: string, clientId: string, paused: boolean) {
   await requireBusinessAccess(businessId);
   await setAgentPaused(businessId, clientId, paused);
@@ -81,8 +157,6 @@ export async function staffReplyAction(businessId: string, clientId: string, for
   revalidatePath(`/app/${businessId}/clients/${clientId}`);
   redirect(`/app/${businessId}/clients/${clientId}?${outcome}#conversation`);
 }
-
-const nullable = (form: FormData, key: string) => str(form, key) || null;
 
 async function patientChange(businessId: string, clientId: string, section: string, change: () => Promise<void>) {
   let outcome = `saved=${section}`;

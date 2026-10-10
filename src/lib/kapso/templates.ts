@@ -96,6 +96,19 @@ export const TEMPLATES = [
       },
     ],
   },
+  // Sent when the clinic's team books or moves an appointment from the dashboard.
+  {
+    name: "praxia_cita_agendada",
+    language: TEMPLATE_LANGUAGE,
+    category: "UTILITY",
+    parameter_format: "NAMED",
+    components: [
+      body(
+        "Hola {{nombre}}, su cita en {{consultorio}} con {{doctor}} quedó agendada para el {{fecha}} a las {{hora}}. Si necesita cambiarla, responda a este mensaje.",
+        ["nombre", "consultorio", "doctor", "fecha", "hora"],
+      ),
+    ],
+  },
 ] as const;
 
 export type TemplateName = (typeof TEMPLATES)[number]["name"];
