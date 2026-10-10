@@ -4,6 +4,7 @@ import { fromZonedTime } from "date-fns-tz";
 import Link from "next/link";
 import { ConfirmButton } from "@/components/confirm-button";
 import { RowMenu } from "@/components/dashboard/row-menu";
+import { AnimatedChanges } from "@/components/dashboard/animated-changes";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import { can, requireBusinessAccess } from "@/lib/auth";
 import { listPractitioners } from "@/lib/booking/practitioners";
@@ -77,7 +78,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   const now = new Date();
 
   return (
-    <div className="flex flex-col gap-4">
+    <AnimatedChanges key={`${view}:${date}`} className="flex flex-col gap-4">
       {toCall.length > 0 && (
         <section className="notice notice-error text-sm">
           <p className="font-medium">
@@ -203,7 +204,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                       const r = item.row;
                       const name = r.clientName ?? formatPhone(r.clientPhone);
                       return (
-                        <li key={r.appointment.id}>
+                        <li key={r.appointment.id} data-live-row={`mobile:${r.appointment.id}`} data-live-version={r.appointment.status}>
                           <Link
                             href={`${base}/clients/${r.appointment.clientId}`}
                             title={`${name} · ${r.serviceName}`}
@@ -339,7 +340,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           </section>
         </details>
       )}
-    </div>
+    </AnimatedChanges>
   );
 }
 
@@ -398,7 +399,7 @@ function AppointmentRow({
   const secondary = "rounded-full border bg-white px-3 py-1 text-xs hover:bg-neutral-100";
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+    <li data-live-row={a.id} data-live-version={a.status} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="flex items-center gap-4">
         <div className="w-28 text-sm font-medium tabular-nums">
           {formatLocal(a.startsAt, tz, "h:mm a")}–{formatLocal(a.endsAt, tz, "h:mm a")}

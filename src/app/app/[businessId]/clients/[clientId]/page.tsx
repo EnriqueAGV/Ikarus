@@ -1,6 +1,7 @@
 import { displayDate } from "@/lib/dates";
 import { DateInput } from "@/components/date-input";
 import Link from "next/link";
+import { AnimatedChanges } from "@/components/dashboard/animated-changes";
 import { notFound } from "next/navigation";
 import { can, requireBusinessAccess } from "@/lib/auth";
 import { listPractitioners } from "@/lib/booking/practitioners";
@@ -116,7 +117,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   ];
 
   return (
-    <div className="dashboard-view">
+    <AnimatedChanges key={`${client.id}:${view}`} className="dashboard-view">
       <Link href={sp.from === "inbox" ? `/app/${business.id}/inbox` : `/app/${business.id}/clients?${backQuery}`} className="text-sm text-muted hover:underline">
         ← {sp.from === "inbox" ? "Por responder" : "Pacientes"}
       </Link>
@@ -464,7 +465,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
               {[...upcoming, ...(view === "appointments" ? history : [])].map(({ appointment: a, serviceName, practitionerName }) => (
-                <li key={a.id} className="flex items-center justify-between gap-2">
+                <li key={a.id} data-live-row={a.id} data-live-version={a.status} className="flex items-center justify-between gap-2">
                   <span>
                     <span className="mb-1 block text-xs text-muted">{upcoming.some(row => row.appointment.id === a.id) ? "Próxima cita" : "Historial"} · {practitionerName}</span>
                     <Link href={`/app/${business.id}?date=${formatLocal(a.startsAt, tz, "yyyy-MM-dd")}`} className="hover:underline"><span className="capitalize">{formatLocal(a.startsAt, tz, "dd-MM-yyyy, h:mm a")}</span> · {serviceName}</Link>
@@ -546,6 +547,6 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
           </RecordForm>
         </section>
       )}
-    </div>
+    </AnimatedChanges>
   );
 }
