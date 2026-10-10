@@ -76,6 +76,12 @@ export const settingsErrorLabel: Record<string, string> = {
   not_connected: "El WhatsApp del consultorio no está conectado.",
   send_failed: "No se pudo enviar el mensaje.",
   empty: "Escribe un mensaje.",
+  unknown_intake: "No se encontró un dato recibido que se pueda revisar.",
+  record_changed: "El expediente o sus citas cambiaron. Actualiza la página y revisa los efectos antes de confirmar.",
+  archived: "Restaura al paciente antes de hacer cambios.",
+  send_uncertain: "No pudimos confirmar el envío. El asistente sigue en pausa. Revisa WhatsApp antes de enviar otro mensaje; este envío no se repetirá automáticamente.",
+  attempt_changed: "La respuesta cambió desde el primer intento. Revisa el resultado en WhatsApp y prepara un envío distinto.",
+  pending_send: "Este envío ya está en proceso. Actualiza la conversación para comprobar el resultado.",
   no_whatsapp: "Este paciente no tiene WhatsApp registrado.",
   invalid_phone: "El número no es válido. Escribe 8 dígitos o el número con código de país.",
   name_required_patient: "Escribe el nombre del paciente.",
@@ -107,7 +113,7 @@ export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MM
 }
 
 export function formatPhone(waPhone: string | null) {
-  return waPhone ? `+${waPhone}` : "Sin WhatsApp";
+  return waPhone ? (waPhone.startsWith("503") && waPhone.length === 11 ? `+503 ${waPhone.slice(3, 7)} ${waPhone.slice(7)}` : `+${waPhone}`) : "Sin WhatsApp";
 }
 
 export const accessActionLabel = {

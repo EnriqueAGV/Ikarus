@@ -30,7 +30,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
 
   return (
     <div className="flex max-w-3xl flex-col gap-5">
-      <Link href={`${back}#notas`} className="text-sm text-neutral-500 hover:underline">
+      <Link href={`${back}?view=clinical#notas`} className="text-sm text-neutral-500 hover:underline">
         ← {client.name ?? "Paciente"}
       </Link>
       <header className="flex flex-wrap items-start justify-between gap-3">

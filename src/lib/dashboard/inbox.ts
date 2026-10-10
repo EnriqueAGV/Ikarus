@@ -1,75 +1,56 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { conversationId } from "@/lib/household";
 
-// Conversations the assistant handed to the team (or the team took over),
-// for the "Por responder" list. Waiting: the patient wrote last. Answered:
-// the team replied but the assistant is still paused for that number.
+const eligible = (businessId: string) => and(
+  eq(schema.clients.businessId, businessId), isNull(schema.clients.holderId), isNull(schema.clients.archivedAt),
+  or(inArray(schema.clients.attentionStatus, ["needs_reply", "follow_up"]),
+    and(eq(schema.clients.agentPaused, true), isNull(schema.clients.attentionStatus))),
+);
 
-export type InboxRow = {
-  client: { id: string; name: string | null; waPhone: string | null };
-  lastMessage: { body: string | null; type: string; direction: "inbound" | "outbound"; createdAt: Date } | null;
-  lastInboundAt: Date | null;
-  waiting: boolean;
-};
-
-export async function pausedConversations(businessId: string): Promise<InboxRow[]> {
-  const holders = await db
-    .select({
-      id: schema.clients.id,
-      name: schema.clients.name,
-      waPhone: schema.clients.waPhone,
-      // As epoch milliseconds: postgres-js returns a bare timestamp string here.
-      lastInboundAt: sql<number | null>`(select extract(epoch from max(m.created_at)) * 1000 from messages m where m.client_id = "clients"."id" and m.direction = 'inbound')`.mapWith(
-        (v) => (v === null ? null : new Date(Number(v))),
-      ),
-    })
-    .from(schema.clients)
-    .where(
-      and(
-        eq(schema.clients.businessId, businessId),
-        eq(schema.clients.agentPaused, true),
-        isNull(schema.clients.holderId),
-        isNull(schema.clients.archivedAt),
-      ),
-    )
-    .limit(200);
-  if (holders.length === 0) return [];
-  const last = await db
-    .selectDistinctOn([schema.messages.clientId], {
-      clientId: schema.messages.clientId,
-      body: schema.messages.body,
-      type: schema.messages.type,
-      direction: schema.messages.direction,
-      createdAt: schema.messages.createdAt,
-    })
-    .from(schema.messages)
-    .where(inArray(schema.messages.clientId, holders.map((h) => h.id)))
-    .orderBy(asc(schema.messages.clientId), desc(schema.messages.createdAt));
-  const lastBy = new Map(last.map((m) => [m.clientId, m]));
-  const rows = holders.map(({ lastInboundAt, ...client }) => {
-    const m = lastBy.get(client.id) ?? null;
-    return {
-      client,
-      lastMessage: m && { body: m.body, type: m.type, direction: m.direction, createdAt: m.createdAt },
-      lastInboundAt,
-      waiting: m?.direction === "inbound",
-    };
-  });
-  // Waiting first, the longest wait at the top; then the rest, latest first.
-  return rows.sort((a, b) => {
-    if (a.waiting !== b.waiting) return a.waiting ? -1 : 1;
-    const at = a.lastMessage?.createdAt.getTime() ?? 0;
-    const bt = b.lastMessage?.createdAt.getTime() ?? 0;
-    return a.waiting ? at - bt : bt - at;
-  });
+export async function pausedConversations(businessId: string, opts: { page?: number; pageSize?: number; status?: "needs_reply" | "follow_up" } = {}) {
+  const holders = await db.select({
+    id: schema.clients.id, name: schema.clients.name, waPhone: schema.clients.waPhone,
+    agentPaused: schema.clients.agentPaused, attentionStatus: schema.clients.attentionStatus,
+    attentionSince: schema.clients.attentionSince, attentionReason: schema.clients.attentionReason,
+    attentionUrgent: schema.clients.attentionUrgent,
+    lastInboundAt: sql<Date | null>`(select max(m.created_at) from messages m where m.client_id = "clients"."id" and m.direction = 'inbound')`.mapWith(v => v === null ? null : new Date(v)),
+  }).from(schema.clients).where(and(eligible(businessId), opts.status ? sql`coalesce(${schema.clients.attentionStatus}, 'needs_reply') = ${opts.status}` : undefined))
+    .orderBy(desc(schema.clients.attentionUrgent), asc(sql`coalesce(${schema.clients.attentionSince}, ${schema.clients.createdAt})`), asc(schema.clients.id))
+    .limit(opts.pageSize ?? 1000).offset(((opts.page ?? 1) - 1) * (opts.pageSize ?? 1000));
+  if (!holders.length) return [];
+  const last = await db.selectDistinctOn([schema.messages.clientId], {
+    clientId: schema.messages.clientId, body: schema.messages.body, type: schema.messages.type,
+    direction: schema.messages.direction, createdAt: schema.messages.createdAt,
+  }).from(schema.messages).where(inArray(schema.messages.clientId, holders.map(h => h.id)))
+    .orderBy(asc(schema.messages.clientId), desc(schema.messages.createdAt), desc(schema.messages.id));
+  const byClient = new Map(last.map(m => [m.clientId, m]));
+  return holders.map(({ lastInboundAt, ...client }) => ({
+    client, lastMessage: byClient.get(client.id) ?? null, lastInboundAt,
+    waiting: client.attentionStatus !== "follow_up",
+  }));
 }
+export type InboxRow = Awaited<ReturnType<typeof pausedConversations>>[number];
 
-// How many patients are waiting on the team, for the menu badge.
-export async function waitingCount(businessId: string) {
-  const rows = await db.execute<{ n: number }>(sql`
-    select count(*)::int as n from ${schema.clients} c
-    where c.business_id = ${businessId} and c.agent_paused and c.holder_id is null and c.archived_at is null
-      and (select m.direction from ${schema.messages} m where m.client_id = c.id order by m.created_at desc limit 1) = 'inbound'
-  `);
-  return Number(rows[0]?.n ?? 0);
+export async function inboxCounts(businessId: string) {
+  const [counts] = await db.select({
+    needsReply: sql<number>`count(*) filter (where coalesce(${schema.clients.attentionStatus}, 'needs_reply') = 'needs_reply')::int`,
+    followUp: sql<number>`count(*) filter (where ${schema.clients.attentionStatus} = 'follow_up')::int`,
+  }).from(schema.clients).where(eligible(businessId));
+  return counts;
+}
+export async function waitingCount(businessId: string) { return (await inboxCounts(businessId)).needsReply; }
+
+export async function resolveConversation(businessId: string, clientId: string, expectedLastId?: string | null) {
+  return db.transaction(async tx => {
+    const [patient] = await tx.select().from(schema.clients).where(and(eq(schema.clients.businessId, businessId), eq(schema.clients.id, clientId)));
+    if (!patient || patient.archivedAt || patient.mergedIntoId) return false;
+    const holderId = conversationId(patient);
+    await tx.select({ id: schema.clients.id }).from(schema.clients).where(eq(schema.clients.id, holderId)).for("update");
+    const [latest] = await tx.select({ id: schema.messages.id }).from(schema.messages).where(eq(schema.messages.clientId, holderId)).orderBy(desc(schema.messages.createdAt), desc(schema.messages.id)).limit(1);
+    if (expectedLastId !== undefined && (latest?.id ?? null) !== expectedLastId) return false;
+    await tx.update(schema.clients).set({ attentionStatus: "resolved", attentionSince: null, attentionReason: null, attentionUrgent: false })
+      .where(and(eq(schema.clients.businessId, businessId), eq(schema.clients.id, holderId)));
+    return true;
+  });
 }

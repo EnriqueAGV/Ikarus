@@ -1,106 +1,47 @@
 import Link from "next/link";
 import { requireBusinessAccess } from "@/lib/auth";
-import { listClients } from "@/lib/dashboard/appointments";
-import { formatLocal, formatPhone, settingsErrorLabel } from "@/lib/dashboard/labels";
-import { createPatientAction } from "../actions";
+import { listClients, patientCount } from "@/lib/dashboard/appointments";
+import { formatLocal, formatPhone } from "@/lib/dashboard/labels";
+import { RecordForm } from "@/components/dashboard/record-form";
+import { Pagination } from "@/components/dashboard/pagination";
+import { registerPatientAction } from "../workflow-actions";
 
 export default async function ClientsPage({ params, searchParams }: PageProps<"/app/[businessId]/clients">) {
   const { businessId } = await params;
-  const { q, new: open, recordError, archived } = await searchParams;
+  const sp = await searchParams;
   const { business } = await requireBusinessAccess(businessId);
-  const query = typeof q === "string" ? q : "";
-  const showArchived = archived === "1";
-  const rows = await listClients(business.id, query, { archived: showArchived });
-  const error = typeof recordError === "string" ? settingsErrorLabel[recordError] ?? "Algo salió mal." : null;
-  const input = "rounded-xl border px-2 py-1.5 text-sm";
-  const label = "flex flex-col gap-1 text-xs text-neutral-500";
-
-  return (
-    <div className="flex flex-col gap-4">
-      <form className="flex gap-2">
-        <input
-          name="q"
-          defaultValue={query}
-          placeholder="Buscar por nombre o teléfono"
-          className="w-full max-w-sm rounded-xl border px-3 py-1.5 text-sm"
-        />
-        {showArchived && <input type="hidden" name="archived" value="1" />}
-        <button className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">Buscar</button>
-        <Link
-          href={showArchived ? `/app/${business.id}/clients` : `/app/${business.id}/clients?archived=1`}
-          className="self-center whitespace-nowrap text-sm text-neutral-500 hover:underline"
-        >
-          {showArchived ? "Ver activos" : "Ver archivados"}
-        </Link>
-      </form>
-      <details open={open === "1"} className="card p-5">
-        <summary className="cursor-pointer text-sm font-medium">Nuevo paciente</summary>
-        <form action={createPatientAction.bind(null, business.id)} className="mt-3 grid gap-3 sm:grid-cols-2">
-          {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
-          <label className={label}>
-            Nombre completo
-            <input name="name" required className={input} />
-          </label>
-          <label className={label}>
-            WhatsApp (opcional)
-            <input name="phone" type="tel" placeholder="7000 0000" className={input} />
-          </label>
-          <label className={label}>
-            Fecha de nacimiento
-            <input name="dateOfBirth" type="date" className={input} />
-          </label>
-          <label className={label}>
-            Sexo
-            <select name="sex" defaultValue="" className={input}>
-              <option value="">Sin indicar</option>
-              <option value="female">Femenino</option>
-              <option value="male">Masculino</option>
-            </select>
-          </label>
-          <p className="text-xs text-neutral-500 sm:col-span-2">
-            Si el número ya es de otro paciente (por ejemplo, la mamá), el nuevo paciente comparte ese WhatsApp y el
-            asistente lo reconoce cuando ella escribe.
-          </p>
-          <div className="flex justify-end sm:col-span-2">
-            <button className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">Registrar paciente</button>
-          </div>
-        </form>
-      </details>
-      {rows.length === 0 ? (
-        <p className="card p-8 text-center text-sm text-neutral-500">
-          {showArchived ? "No hay pacientes archivados." : query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp, o puedes registrarlos en Nuevo paciente."}
-        </p>
-      ) : (
-        <ul className="card divide-y overflow-hidden">
-          {rows.map(({ client, appointmentCount, lastAppointment }) => (
-            <li key={client.id}>
-              <Link
-                href={`/app/${business.id}/clients/${client.id}`}
-                className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-900"
-              >
-                <div>
-                  <div className="font-medium">{client.name ?? "Sin nombre"}</div>
-                  <div className="text-sm text-neutral-500">{formatPhone(client.waPhone)}</div>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-neutral-500">
-                  {client.mergedIntoId && (
-                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-900">Unido a otro expediente</span>
-                  )}
-                  {client.agentPaused && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                      Esperando al equipo
-                    </span>
-                  )}
-                  <span>
-                    {appointmentCount} {appointmentCount === 1 ? "cita" : "citas"}
-                    {lastAppointment ? ` · última ${formatLocal(new Date(lastAppointment), business.timezone, "d MMM yyyy")}` : ""}
-                  </span>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+  const query = typeof sp.q === "string" ? sp.q : "";
+  const archived = sp.archived === "1";
+  const sort = sp.sort === "name" ? "name" : "recent";
+  const total = await patientCount(business.id, query, archived);
+  const page = Math.min(Math.max(1, Math.floor(Number(sp.page) || 1)), Math.max(1, Math.ceil(total / 25)));
+  const rows = await listClients(business.id, query, { archived, sort, page, pageSize: 25 });
+  const base = `/app/${business.id}/clients`;
+  const paramsFor = (p = page, scope = archived) => new URLSearchParams({ q: query, sort, page: String(p), ...(scope ? { archived: "1" } : {}) });
+  const context = paramsFor().toString();
+  return <div className="dashboard-view">
+    <header className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="dashboard-heading">Pacientes</h2><p className="mt-1 text-sm text-muted">{total} {archived ? "expedientes archivados" : "pacientes activos"}{query && " que coinciden con la búsqueda"}</p></div><Link className="btn-primary" href={`${base}?${context}&new=1#nuevo`}>Nuevo paciente</Link></header>
+    <nav className="section-tabs" aria-label="Estado de los pacientes"><Link aria-current={!archived ? "page" : undefined} href={`${base}?${paramsFor(1, false)}`}>Activos</Link><Link aria-current={archived ? "page" : undefined} href={`${base}?${paramsFor(1, true)}`}>Archivados</Link></nav>
+    <form className="flex flex-wrap items-end gap-3">
+      {archived && <input type="hidden" name="archived" value="1" />}
+      <label className="field-label min-w-0 flex-1 basis-64">Buscar pacientes<input name="q" defaultValue={query} placeholder="Nombre o teléfono" type="search" /></label>
+      <label className="field-label">Ordenar por<select name="sort" defaultValue={sort}><option value="recent">Registro más reciente</option><option value="name">Nombre A–Z</option></select></label>
+      <button className="btn-secondary">Buscar</button>{query && <Link className="btn-quiet" href={`${base}?${new URLSearchParams({ sort, ...(archived ? { archived: "1" } : {}) })}`}>Limpiar búsqueda</Link>}
+    </form>
+    {sp.new === "1" && <section id="nuevo" className="card dashboard-card"><div className="mb-5 flex items-center justify-between"><h3 className="font-semibold">Registrar paciente</h3><Link className="btn-quiet" href={`${base}?${context}`}>Cerrar</Link></div>
+      <RecordForm action={registerPatientAction.bind(null, business.id)} className="grid gap-4 sm:grid-cols-2" submitLabel="Registrar paciente">
+        <label className="field-label">Nombre completo <span className="sr-only">obligatorio</span><input name="name" required autoComplete="name" /></label>
+        <label className="field-label">WhatsApp (opcional)<input name="phone" type="tel" autoComplete="tel" placeholder="7000 0000" /></label>
+        <label className="field-label">Fecha de nacimiento (opcional)<input name="dateOfBirth" type="date" max={new Date().toISOString().slice(0, 10)} /></label>
+        <label className="field-label">Sexo (opcional)<select name="sex" defaultValue=""><option value="">Sin indicar</option><option value="female">Femenino</option><option value="male">Masculino</option></select></label>
+        <p className="text-sm text-muted sm:col-span-2">Si el WhatsApp pertenece a otro paciente, se comparte el contacto; se conserva un expediente distinto para cada persona.</p>
+      </RecordForm>
+    </section>}
+    {rows.length ? <div className="card overflow-hidden"><div className="hidden grid-cols-[minmax(0,1.5fr)_1fr_1fr] gap-4 border-b px-6 py-4 text-xs font-medium text-muted md:grid"><span>Paciente y contacto</span><span>Próxima cita</span><span>Última consulta atendida</span></div><ul className="divide-y">{rows.map(({ client, nextAppointment, lastAppointment, conversationPaused, conversationStatus, sharedNumber }) => <li key={client.id}><Link href={`${base}/${client.id}?back=${encodeURIComponent(context)}`} className="grid items-center gap-4 px-6 py-5 hover:bg-neutral-50 md:grid-cols-[minmax(0,1.5fr)_1fr_1fr]">
+      <div className="min-w-0"><p className="font-semibold">{client.name ?? "Sin nombre"}</p><p className="mt-1 text-sm text-muted">{formatPhone(client.waPhone)}{client.dateOfBirth && ` · ${formatLocal(new Date(`${client.dateOfBirth}T12:00:00Z`), "UTC", "d MMM yyyy")}`}</p><div className="mt-2 flex flex-wrap gap-2">{sharedNumber && <span className="text-xs text-muted">WhatsApp compartido</span>}{client.mergedIntoId && <span className="badge">Expediente unido</span>}{conversationStatus === "needs_reply" && <span className="badge bg-amber-50 text-amber-900">Pendiente de respuesta</span>}{conversationStatus === "follow_up" && <span className="text-xs text-muted">En seguimiento</span>}{conversationPaused && <span className="text-xs text-muted">Asistente en pausa</span>}</div></div>
+      <div className="text-sm"><span className="block text-xs text-muted md:hidden">Próxima cita</span>{nextAppointment ? formatLocal(nextAppointment, business.timezone, "d MMM yyyy, HH:mm") : "Sin próxima cita"}</div>
+      <div className="text-sm text-muted"><span className="block text-xs md:hidden">Última consulta atendida</span>{lastAppointment ? formatLocal(lastAppointment, business.timezone, "d MMM yyyy") : "Sin consultas atendidas"}</div>
+    </Link></li>)}</ul></div> : <div className="card px-6 py-12 text-center"><h3 className="font-semibold">{query ? "Ningún paciente coincide con la búsqueda" : archived ? "No hay pacientes archivados" : "Aún no hay pacientes"}</h3><p className="mt-2 text-sm text-muted">{query ? "Prueba con otro nombre o número, o limpia la búsqueda." : archived ? "Los expedientes archivados se conservan y pueden restaurarse." : "Aparecen cuando escriben por WhatsApp. También puedes registrar un paciente que llama o visita la clínica."}</p></div>}
+    <Pagination page={page} pageSize={25} total={total} href={p => `${base}?${paramsFor(p)}`} />
+  </div>;
 }

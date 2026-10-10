@@ -1,3 +1,4 @@
+import { openAttention } from "@/lib/messaging/attention";
 import type { ChatTool } from "./llm";
 import { eq } from "drizzle-orm";
 import { addDays } from "date-fns";
@@ -413,10 +414,8 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
     }
 
     case "handoff_to_business": {
-      await db
-        .update(schema.clients)
-        .set({ agentPaused: true })
-        .where(eq(schema.clients.id, ctx.client.id));
+      const input = inputs.handoff_to_business.parse(rawInput);
+      await openAttention(ctx.business.id, ctx.client.id, String(input.reason), false, ctx.now);
       return { result: { handed_off: true }, handoff: true };
     }
   }

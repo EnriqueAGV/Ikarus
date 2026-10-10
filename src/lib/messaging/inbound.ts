@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { holderOfNumber } from "@/lib/household";
 
@@ -90,5 +90,10 @@ export async function storeInbound(p: KapsoInbound): Promise<StoredInbound | nul
     })
     .returning();
 
+  // A new message reopens human work without resetting an unresolved case's age.
+  await db.update(schema.clients).set({
+    attentionStatus: "needs_reply",
+    attentionSince: sql`case when ${schema.clients.attentionStatus} in ('needs_reply', 'follow_up') then coalesce(${schema.clients.attentionSince}, ${message.createdAt.toISOString()}::timestamptz) else ${message.createdAt.toISOString()}::timestamptz end`,
+  }).where(and(eq(schema.clients.id, client.id), eq(schema.clients.agentPaused, true)));
   return { businessId: business.id, clientId: client.id, messageId: message.id };
 }

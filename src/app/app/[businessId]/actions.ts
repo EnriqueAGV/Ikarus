@@ -160,7 +160,7 @@ export async function staffReplyAction(businessId: string, clientId: string, for
     outcome = "error=send_failed";
   }
   revalidatePath(`/app/${businessId}/clients/${clientId}`);
-  redirect(`/app/${businessId}/clients/${clientId}?${outcome}#conversation`);
+  redirect(`/app/${businessId}/clients/${clientId}?view=conversation&${outcome}#conversation`);
 }
 
 async function patientChange(businessId: string, clientId: string, section: string, change: () => Promise<void>) {
@@ -172,7 +172,7 @@ async function patientChange(businessId: string, clientId: string, section: stri
     outcome = `recordError=${err.code}`;
   }
   revalidatePath(`/app/${businessId}/clients/${clientId}`);
-  redirect(`/app/${businessId}/clients/${clientId}?${outcome}#${section}`);
+  redirect(`/app/${businessId}/clients/${clientId}?view=${section === "clinico" ? "clinical" : "data"}&${outcome}#${section}`);
 }
 
 export async function saveDemographicsAction(businessId: string, clientId: string, form: FormData) {

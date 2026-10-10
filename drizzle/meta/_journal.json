@@ -99,6 +99,13 @@
       "when": 1791651450458,
       "tag": "0013_records_location_stats",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791658093288,
+      "tag": "0014_conversation_attention",
+      "breakpoints": true
     }
   ]
 }

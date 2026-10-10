@@ -1,7 +1,8 @@
 import { and, desc, eq, gt, ilike, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
-import { updateAppointmentByBusiness } from "@/lib/dashboard/appointments";
+import { inngest } from "@/inngest/client";
+import { mergeReviewToken } from "./record-review";
 import { getPractitioner } from "@/lib/booking/practitioners";
 import { holderOfNumber, normalizePhone } from "@/lib/household";
 import { can, type Role } from "@/lib/permissions";
@@ -28,7 +29,10 @@ export class PatientError extends Error {
       | "phone_in_use"
       | "has_dependents"
       | "same_patient"
-      | "merged",
+      | "merged"
+      | "archived"
+      | "record_changed"
+      | "unknown_intake",
   ) {
     super(code);
   }
@@ -63,7 +67,7 @@ function birthDate(raw: string | null, now: Date) {
   const value = blank(raw);
   if (!value) return null;
   const parsed = Date.parse(`${value}T00:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed) || parsed > now.getTime() || value < "1900-01-01") {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed) || new Date(parsed).toISOString().slice(0, 10) !== value || parsed > now.getTime() || value < "1900-01-01") {
     throw new PatientError("invalid_birth_date");
   }
   return value;
@@ -71,10 +75,12 @@ function birthDate(raw: string | null, now: Date) {
 
 async function requirePatient(businessId: string, clientId: string) {
   const [client] = await db
-    .select({ id: schema.clients.id })
+    .select({ id: schema.clients.id, merged: schema.clients.mergedIntoId, archived: schema.clients.archivedAt })
     .from(schema.clients)
     .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
   if (!client) throw new PatientError("not_found");
+  if (client.merged) throw new PatientError("merged");
+  if (client.archived) throw new PatientError("archived");
 }
 
 export async function logAccess(actor: Actor, clientId: string, action: AccessAction) {
@@ -111,6 +117,7 @@ export async function updateDemographics(actor: Actor, clientId: string, input: 
   if (input.preferredPractitionerId && !(await getPractitioner(actor.business.id, input.preferredPractitionerId))) {
     throw new PatientError("unknown_practitioner");
   }
+  if (!blank(input.name)) throw new PatientError("name_required_patient");
   const values = {
     name: blank(input.name),
     dateOfBirth: birthDate(input.dateOfBirth, now),
@@ -210,23 +217,26 @@ export async function createPatient(
 // kept, so they are hidden from Pacientes, search and the assistant instead,
 // and their upcoming appointments are cancelled. Restoring undoes it, and a
 // number's holder who writes again comes back by themselves.
-export async function archivePatient(actor: Actor, clientId: string, now = new Date()) {
+export async function archivePatient(actor: Actor, clientId: string, now = new Date(), expectedIds?: string[]) {
   if (!can(actor, "patients")) throw new PatientError("forbidden");
-  await requirePatient(actor.business.id, clientId);
-  const upcoming = await db
-    .select({ id: schema.appointments.id })
-    .from(schema.appointments)
-    .where(
-      and(
-        eq(schema.appointments.clientId, clientId),
-        inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
-        gt(schema.appointments.startsAt, now),
-      ),
-    );
-  for (const { id } of upcoming) await updateAppointmentByBusiness(actor.business.id, id, "cancel", now);
-  await db.update(schema.clients).set({ archivedAt: now }).where(eq(schema.clients.id, clientId));
-  await logAccess(actor, clientId, "archive_patient");
-  return { cancelled: upcoming.length };
+  const cancelled = await db.transaction(async tx => {
+    const patient = await lockPatient(tx, actor.business.id, clientId);
+    if (patient.archivedAt) return [];
+    const upcoming = await tx.select({ id: schema.appointments.id }).from(schema.appointments).where(and(
+      eq(schema.appointments.businessId, actor.business.id), eq(schema.appointments.clientId, clientId),
+      inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]), gt(schema.appointments.startsAt, now),
+    )).for("update");
+    if (expectedIds && JSON.stringify(upcoming.map(a => a.id).sort()) !== JSON.stringify([...expectedIds].sort())) throw new PatientError("record_changed");
+    if (upcoming.length) await tx.update(schema.appointments).set({ status: "cancelled_by_business", cancelledAt: now, cancelReason: "business" }).where(inArray(schema.appointments.id, upcoming.map(a => a.id)));
+    await tx.update(schema.clients).set({ archivedAt: now }).where(eq(schema.clients.id, clientId));
+    await tx.insert(schema.accessLog).values({ businessId: actor.business.id, clientId, userId: actor.profile.id, practitionerId: actor.practitionerId, action: "archive_patient" });
+    return upcoming.map(a => a.id);
+  });
+  for (const appointmentId of cancelled) {
+    try { await inngest.send({ name: "appointment/cancelled", data: { appointmentId, businessId: actor.business.id, clientId } }); }
+    catch (error) { console.error("archive cancellation event failed", error); }
+  }
+  return { cancelled: cancelled.length };
 }
 
 export async function restorePatient(actor: Actor, clientId: string) {
@@ -305,8 +315,8 @@ export async function recordIds(businessId: string, clientId: string) {
   return [clientId, ...merged.map((m) => m.id)];
 }
 
-// Patients who might be the same person: the same number, or a name with
-// the same first and last word. With a query, anyone matching it.
+// Names with the same first and last word are suggestions, not identity proof.
+// Shared numbers alone indicate a household. Manual search also accepts numbers.
 export async function duplicateCandidates(businessId: string, client: Pick<Client, "id" | "name" | "waPhone">, query?: string) {
   const q = query?.trim();
   const words = (client.name ?? "").trim().split(/\s+/).filter((w) => w.length > 1);
@@ -318,7 +328,7 @@ export async function duplicateCandidates(businessId: string, client: Pick<Clien
         : undefined;
   const match = q
     ? or(ilike(schema.clients.name, `%${q}%`), ilike(schema.clients.waPhone, `%${q.replace(/\D/g, "") || q}%`))
-    : or(byName, client.waPhone ? eq(schema.clients.waPhone, client.waPhone) : undefined);
+    : byName;
   if (!match) return [];
   return db
     .select({ id: schema.clients.id, name: schema.clients.name, waPhone: schema.clients.waPhone, dateOfBirth: schema.clients.dateOfBirth, createdAt: schema.clients.createdAt })
@@ -350,13 +360,26 @@ async function moveConversation(tx: Tx, fromId: string, toId: string) {
 // the WhatsApp number when it has none, and the conversation. The duplicate
 // is archived and marked as merged; its signed notes stay on it, shown on
 // the kept record, since signed notes never change.
-export async function mergePatients(actor: Actor, keepId: string, dropId: string, now = new Date()) {
+export async function mergePatients(actor: Actor, keepId: string, dropId: string, now = new Date(), expectedToken?: string) {
   if (!can(actor, "patients")) throw new PatientError("forbidden");
   if (keepId === dropId) throw new PatientError("same_patient");
   await db.transaction(async (tx) => {
     const keep = await lockPatient(tx, actor.business.id, keepId);
     const drop = await lockPatient(tx, actor.business.id, dropId);
+    if (expectedToken && mergeReviewToken(keep, drop) !== expectedToken) throw new PatientError("record_changed");
     const set = (id: string, values: Partial<Client>) => tx.update(schema.clients).set(values).where(eq(schema.clients.id, id));
+    const transferAttention = async () => {
+      if (drop.attentionStatus === "needs_reply" || drop.attentionStatus === "follow_up" || (drop.agentPaused && !drop.attentionStatus)) {
+        const targetId = keep.holderId ?? keep.id;
+        const target = targetId === keep.id ? keep : await lockPatient(tx, actor.business.id, targetId);
+        await set(targetId, {
+          attentionStatus: target.attentionStatus === "needs_reply" || drop.attentionStatus !== "follow_up" ? "needs_reply" : "follow_up",
+          attentionSince: target.attentionSince && drop.attentionSince ? new Date(Math.min(target.attentionSince.getTime(), drop.attentionSince.getTime())) : target.attentionSince ?? drop.attentionSince ?? now,
+          attentionReason: target.attentionReason ?? drop.attentionReason,
+          attentionUrgent: target.attentionUrgent || drop.attentionUrgent,
+        });
+      }
+    };
     const leaveNumber = () => set(drop.id, { waPhone: null, holderId: null });
 
     if (drop.waPhone && !keep.waPhone) {
@@ -393,6 +416,7 @@ export async function mergePatients(actor: Actor, keepId: string, dropId: string
       }
     }
 
+    await transferAttention();
     await tx.update(schema.appointments).set({ clientId: keep.id }).where(eq(schema.appointments.clientId, drop.id));
     await set(keep.id, {
       name: keep.name ?? drop.name,
@@ -422,5 +446,25 @@ export async function mergePatients(actor: Actor, keepId: string, dropId: string
         action: "merge_patient",
       });
     }
+  });
+}
+
+// Review a source answer explicitly, preserving the received value as provenance.
+export async function reviewIntake(actor: Actor, clientId: string, key: string, expectedReceived: string, decision: "received" | "record", now = new Date()) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  const { intakeReviewFields } = await import("./intake-review");
+  await db.transaction(async tx => {
+    const patient = await lockPatient(tx, actor.business.id, clientId);
+    if (patient.archivedAt) throw new PatientError("archived");
+    const fields = await tx.select({ key: schema.intakeFields.key, label: schema.intakeFields.label }).from(schema.intakeFields).where(eq(schema.intakeFields.businessId, actor.business.id));
+    const source = intakeReviewFields(patient.data, fields, patient).find(f => f.key === key);
+    if (!source) throw new PatientError("unknown_intake");
+    if (source.received !== expectedReceived) throw new PatientError("record_changed");
+    const canonical = decision === "record" ? source.canonical : source.target === "dui" ? normalizeDui(source.received) : birthDate(source.received, now);
+    await tx.update(schema.clients).set({
+      ...(decision === "received" ? { [source.target]: canonical } : {}),
+      intakeReview: { ...patient.intakeReview, [key]: { received: source.received, canonical, reviewedAt: now.toISOString() } },
+    }).where(eq(schema.clients.id, clientId));
+    await tx.insert(schema.accessLog).values({ businessId: actor.business.id, clientId, userId: actor.profile.id, practitionerId: actor.practitionerId, action: "edit_chart" });
   });
 }
