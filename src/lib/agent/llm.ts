@@ -35,29 +35,58 @@ export class LlmError extends Error {
   }
 }
 
+// A healthy call answers in seconds; one that hangs is cut off and tried
+// again rather than holding the patient's reply for minutes.
+const ATTEMPT_TIMEOUT_MS = 30_000;
+const ATTEMPTS = 3;
+
+function retryable(err: unknown) {
+  if (err instanceof LlmError) return err.status === 408 || err.status === 429 || err.status >= 500;
+  return true; // timeouts and network errors
+}
+
 export function chatClient(
   baseUrl = env.LLM_BASE_URL,
   apiKey = env.LLM_API_KEY,
+  { timeoutMs = ATTEMPT_TIMEOUT_MS, attempts = ATTEMPTS } = {},
 ): ChatClient {
+  const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
+  // OpenRouter routes each call to one of several providers; prefer the fastest.
+  const extra = new URL(url).hostname.endsWith("openrouter.ai") ? { provider: { sort: "latency" } } : {};
+
+  async function once(req: ChatRequest): Promise<ChatResponse> {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify({ ...req, tool_choice: "auto", ...extra }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new LlmError(res.status, text);
+    const data = JSON.parse(text) as {
+      choices?: { message?: ChatResponse["message"]; finish_reason?: string | null }[];
+    };
+    const choice = data.choices?.[0];
+    if (!choice?.message) throw new LlmError(502, `no choices in response: ${text}`);
+    return { message: choice.message, finishReason: choice.finish_reason ?? null };
+  }
+
   return {
     async complete(req) {
-      const res = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
-        },
-        body: JSON.stringify({ ...req, tool_choice: "auto" }),
-        signal: AbortSignal.timeout(120_000),
-      });
-      const text = await res.text();
-      if (!res.ok) throw new LlmError(res.status, text);
-      const data = JSON.parse(text) as {
-        choices?: { message?: ChatResponse["message"]; finish_reason?: string | null }[];
-      };
-      const choice = data.choices?.[0];
-      if (!choice?.message) throw new LlmError(res.status, `no choices in response: ${text}`);
-      return { message: choice.message, finishReason: choice.finish_reason ?? null };
+      for (let attempt = 1; ; attempt++) {
+        const started = Date.now();
+        try {
+          const out = await once(req);
+          console.info("llm call", { model: req.model, attempt, ms: Date.now() - started });
+          return out;
+        } catch (err) {
+          console.warn("llm call failed", { model: req.model, attempt, ms: Date.now() - started, error: String(err) });
+          if (attempt >= attempts || !retryable(err)) throw err;
+        }
+      }
     },
   };
 }

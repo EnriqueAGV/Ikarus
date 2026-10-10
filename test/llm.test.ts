@@ -17,7 +17,13 @@ const server = await startFakeKapso({
     },
   }),
   "POST /broken/chat/completions": () => ({ status: 401, json: { error: { message: "bad key" } } }),
+  // Hangs on the first call, answers on the next.
+  "POST /slow/chat/completions": () => ({
+    delayMs: slowCalls++ === 0 ? 1_000 : 0,
+    json: { choices: [{ finish_reason: "stop", message: { content: "hola" } }] },
+  }),
 });
+let slowCalls = 0;
 afterAll(() => server.close());
 
 describe("OpenAI-compatible client", () => {
@@ -32,8 +38,17 @@ describe("OpenAI-compatible client", () => {
     });
   });
 
+  it("cuts off a call that hangs and tries again", async () => {
+    const llm = chatClient(`${server.url}/slow`, "sk-test", { timeoutMs: 200 });
+    const res = await llm.complete({ model: "m", messages: [], tools: [] });
+    expect(res.message.content).toBe("hola");
+    expect(server.calls.filter((c) => c.path === "/slow/chat/completions")).toHaveLength(2);
+  });
+
   it("raises the endpoint's error", async () => {
     const llm = chatClient(`${server.url}/broken`, "sk-test");
     await expect(llm.complete({ model: "m", messages: [], tools: [] })).rejects.toBeInstanceOf(LlmError);
+    // A bad key is not retried.
+    expect(server.calls.filter((c) => c.path === "/broken/chat/completions")).toHaveLength(1);
   });
 });
