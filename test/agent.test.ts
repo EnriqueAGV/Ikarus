@@ -438,6 +438,30 @@ describe("booking agent", () => {
 });
 
 describe("when the agent can't answer", () => {
+  it("hands every conversation to the team once the clinic's plan has run out", async () => {
+    await db.update(schema.businesses).set({ paidUntil: "2026-09-01" }).where(eq(schema.businesses.id, business.id));
+    await receive("Hola, quiero una cita");
+    const client = await theClient();
+    const claude = fakeLlm([]);
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client })).toEqual({
+      status: "skipped",
+      reason: "service_stopped",
+    });
+    expect(claude.requests).toHaveLength(0);
+    const sends = kapso.calls.filter((c) => c.path.endsWith("/messages") && !isTyping(c.body));
+    expect(sends).toHaveLength(1);
+    expect((await theClient()).agentPaused).toBe(true);
+  });
+
+  it("answers questions about the clinic from its own information", async () => {
+    await db.update(schema.businesses).set({ faq: "Parqueo gratis frente a la clínica." }).where(eq(schema.businesses.id, business.id));
+    await receive("¿Tienen parqueo?");
+    const claude = fakeLlm([{ text: "Sí, hay parqueo gratis frente a la clínica." }]);
+    await runAgent({ businessId: business.id, clientId: (await theClient()).id, now: NOW, llm: claude.client });
+    const system = String(claude.requests[0].messages[0].content);
+    expect(system).toContain("Clinic information (written by the practice; the only source for questions about it):\nParqueo gratis frente a la clínica.");
+  });
+
   it("sends the holding reply once and hands the conversation to the team", async () => {
     await receive("Si");
     const client = await theClient();

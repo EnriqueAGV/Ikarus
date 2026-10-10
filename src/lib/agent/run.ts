@@ -6,6 +6,7 @@ import { upcomingAppointments } from "@/lib/booking/service";
 import { household as loadHousehold } from "@/lib/household";
 import { sendText, sendTyping } from "@/lib/kapso/client";
 import { loadIntakeFields, missingIntake, reloadClient, type Business, type Client } from "./context";
+import { serviceRunning } from "@/lib/billing";
 import { ensureConsent } from "./consent";
 import { EMERGENCY_REPLY, isEmergency } from "./emergency";
 import { staticSystemPrompt, turnContext } from "./prompt";
@@ -23,7 +24,7 @@ export type AgentRunResult =
   | { status: "replied"; reply: string }
   | { status: "emergency"; replied: boolean }
   | { status: "consent_requested" }
-  | { status: "skipped"; reason: "not_found" | "paused" | "already_answered" };
+  | { status: "skipped"; reason: "not_found" | "paused" | "already_answered" | "service_stopped" };
 
 // Answers the client's latest messages. Runs inside an Inngest function that
 // allows one run per client at a time, so history is read and written in order.
@@ -47,6 +48,11 @@ export async function runAgent(input: {
   const emergency = await answerEmergency(business, client, now);
   if (emergency) return emergency;
   if (client.agentPaused) return { status: "skipped", reason: "paused" };
+  // A clinic whose trial or paid month is over: the team answers instead.
+  if (!serviceRunning(business, now)) {
+    await apologizeAndHandOff(business.id, client.id);
+    return { status: "skipped", reason: "service_stopped" };
+  }
   // Nothing reaches the LLM until the patient accepts the privacy notice.
   const consent = await ensureConsent(business, client);
   if (consent === "requested") return { status: "consent_requested" };

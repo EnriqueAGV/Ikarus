@@ -125,8 +125,42 @@ export const businesses = pgTable(
     // escalate: the appointment stays booked and is flagged for the team to call.
     reminderEndPolicy: reminderEndPolicy("reminder_end_policy").notNull().default("escalate"),
     agentInstructions: text("agent_instructions"),
+    // Address, prices, payment methods and the like, which the assistant
+    // answers from instead of handing the question to the team.
+    faq: text("faq"),
+    // A WhatsApp message offering a new time after a missed appointment.
+    noShowFollowUp: boolean("no_show_follow_up").notNull().default(true),
+    // Billing, by bank transfer: a free trial, then paid months. See
+    // src/lib/billing.ts for when the assistant and reminders stop.
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+    paidUntil: date("paid_until"),
+    monthlyPriceCents: integer("monthly_price_cents"),
+    billingSuspended: boolean("billing_suspended").notNull().default(false),
     createdAt: createdAt(),
   },
+);
+
+export const invoiceStatus = pgEnum("invoice_status", ["pending", "paid", "void"]);
+
+// One month of service, paid by bank transfer with the invoice number as the
+// reference. Marking it paid extends the clinic's paid_until.
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: id(),
+    businessId: businessId(),
+    number: integer("number").generatedAlwaysAsIdentity().notNull().unique(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: text("currency").notNull().default("USD"),
+    status: invoiceStatus("status").notNull().default("pending"),
+    dueOn: date("due_on").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paymentReference: text("payment_reference"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("invoices_business").on(t.businessId, t.periodStart)],
 );
 
 export const businessMembers = pgTable(

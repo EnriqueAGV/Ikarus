@@ -1,5 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
+import { addDays } from "date-fns";
 import { db, schema } from "@/db";
+import { DEFAULT_TRIAL_DAYS } from "@/lib/billing";
 import { env } from "@/lib/env";
 import * as kapso from "@/lib/kapso/client";
 import { TEMPLATES } from "@/lib/kapso/templates";
@@ -25,11 +27,14 @@ export async function createBusiness(input: {
   ownerName?: string;
   specialty?: string;
   jvpmNumber?: string;
+  // Days of free trial; 0 starts billing right away.
+  trialDays?: number;
   createdBy: string;
 }): Promise<Business> {
+  const trialDays = input.trialDays ?? DEFAULT_TRIAL_DAYS;
   const [business] = await db
     .insert(schema.businesses)
-    .values({ name: input.name, timezone: input.timezone })
+    .values({ name: input.name, timezone: input.timezone, trialEndsAt: addDays(new Date(), trialDays) })
     .returning();
 
   const customer = await kapso.createCustomer(business.name, business.id);

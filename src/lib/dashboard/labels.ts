@@ -55,6 +55,7 @@ export const settingsErrorLabel: Record<string, string> = {
   label_required: "La pregunta necesita un texto.",
   choice_needs_options: "Una pregunta de opciones necesita al menos dos opciones.",
   invalid_reminder_hours: "El recordatorio debe enviarse entre 1 y 168 horas antes.",
+  faq_too_long: "La información del consultorio es demasiado larga (máximo 4000 caracteres).",
   instructions_too_long: "Las instrucciones son demasiado largas (máximo 4000 caracteres).",
   invalid_email: "Correo no válido.",
   invalid_dui: "El DUI debe tener 9 dígitos (00000000-0).",
@@ -87,6 +88,7 @@ export const noticeLabel: Record<string, string> = {
   no_whatsapp: "no tiene WhatsApp registrado.",
   not_connected: "el WhatsApp del consultorio no está conectado.",
   template_not_approved: "Meta aún no aprueba el mensaje de cita agendada.",
+  service_stopped: "el asistente está detenido porque el plan del consultorio venció.",
 };
 
 export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MMM, HH:mm") {

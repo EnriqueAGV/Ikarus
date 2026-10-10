@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireBusinessManager } from "@/lib/auth";
+import { bankDetails, formatMoney, invoicesFor, standing, transferReference } from "@/lib/billing";
+import { standingLabel } from "@/lib/billing-labels";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { todayIn } from "@/lib/dashboard/appointments";
 import { formatLocal, settingsErrorLabel, weekdayLabel } from "@/lib/dashboard/labels";
@@ -33,6 +35,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
   const { business } = await requireBusinessManager(businessId);
   const id = business.id;
   const practitioners = await listPractitioners(id);
+  const billing = standing(business);
+  const invoices = await invoicesFor(id);
+  const pendingInvoices = invoices.filter((i) => i.status === "pending");
+  const paidInvoices = invoices.filter((i) => i.status === "paid");
+  const bank = bankDetails();
   // Hours and days off are per doctor; the picker only shows with two or more.
   const doctor =
     practitioners.find((p) => p.id === sp.doctor) ?? practitioners.find((p) => p.active) ?? practitioners[0] ?? null;
@@ -262,6 +269,24 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
               La cita se cancela sola y se le avisa al paciente
             </label>
           </fieldset>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="noShowFollowUp" defaultChecked={business.noShowFollowUp} />
+            Cuando un paciente no asiste, enviarle un WhatsApp ofreciéndole una nueva cita
+          </label>
+          <Field label="Información del consultorio para el asistente (opcional)">
+            <textarea
+              name="faq"
+              rows={6}
+              maxLength={4000}
+              defaultValue={business.faq ?? ""}
+              placeholder={"Dirección: Paseo General Escalón 123, Colonia Escalón, San Salvador.\nParqueo: frente a la clínica, gratis.\nConsulta general: $30. Aceptamos efectivo, tarjeta y transferencia.\nSeguros: no trabajamos con aseguradoras."}
+              className={`${input} w-full`}
+            />
+            <span>
+              El asistente responde con esto preguntas sobre dirección, parqueo, precios, formas de pago o seguros. Lo que
+              no esté aquí lo pasa al equipo.
+            </span>
+          </Field>
           <Field label="Indicaciones para el asistente (opcional)">
             <textarea
               name="agentInstructions"
@@ -276,6 +301,41 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             <button className={primary}>Guardar</button>
           </div>
         </form>
+      </section>
+
+      <section id="plan" className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Plan y pagos</h2>
+        <div className="flex flex-col gap-3 rounded-md border p-3 text-sm">
+          <p className="font-medium">{standingLabel(billing, business.timezone)}</p>
+          {business.monthlyPriceCents && <p>Plan mensual: {formatMoney(business.monthlyPriceCents)}.</p>}
+          {pendingInvoices.map((inv) => (
+            <div key={inv.id} className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950">
+              <p className="font-medium">
+                Factura {transferReference(inv)}: {formatMoney(inv.amountCents, inv.currency)}, del {inv.periodStart} al {inv.periodEnd}
+              </p>
+              <p className="mt-1">
+                Transfiera el monto y escriba <span className="font-mono">{transferReference(inv)}</span> como referencia o
+                concepto. Registramos el pago cuando llega la transferencia.
+              </p>
+              {bank && <pre className="mt-2 whitespace-pre-wrap font-sans">{bank}</pre>}
+            </div>
+          ))}
+          {paidInvoices.length > 0 && (
+            <ul className="divide-y">
+              {paidInvoices.map((inv) => (
+                <li key={inv.id} className="flex justify-between gap-2 py-1">
+                  <span>
+                    {transferReference(inv)} · del {inv.periodStart} al {inv.periodEnd}
+                  </span>
+                  <span className="text-neutral-500">{formatMoney(inv.amountCents, inv.currency)} · Pagada</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {pendingInvoices.length === 0 && paidInvoices.length === 0 && (
+            <p className="text-neutral-500">Aún no hay facturas. Praxia le enviará la primera antes de que termine su prueba.</p>
+          )}
+        </div>
       </section>
     </div>
   );

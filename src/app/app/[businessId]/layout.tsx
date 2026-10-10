@@ -2,12 +2,15 @@ import { LogoMark } from "@/components/logo";
 import { SignOutButton } from "@/components/signout-button";
 import { NavLinks } from "@/components/dashboard/nav-links";
 import { can, requireBusinessAccess } from "@/lib/auth";
+import { standing } from "@/lib/billing";
+import { standingNotice } from "@/lib/billing-labels";
 
 export default async function BusinessLayout({ children, params }: LayoutProps<"/app/[businessId]">) {
   const { businessId } = await params;
   const membership = await requireBusinessAccess(businessId);
   const { business } = membership;
   const base = `/app/${business.id}`;
+  const notice = standingNotice(standing(business), business.timezone);
   const links = [
     { href: base, label: "Citas", exact: true },
     { href: `${base}/clients`, label: "Pacientes" },
@@ -36,6 +39,17 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
         </div>
         <NavLinks links={links} />
       </header>
+      {notice && (
+        <p
+          className={`mb-4 rounded-md border p-3 text-sm print:hidden ${
+            notice.tone === "stop"
+              ? "border-red-300 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200"
+              : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+          }`}
+        >
+          {notice.text}
+        </p>
+      )}
       {children}
     </div>
   );

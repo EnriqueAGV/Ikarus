@@ -26,6 +26,8 @@ const schema = z.object({
   LLM_MODEL: z.string().min(1).optional(),
   // Read by src/lib/crypto.ts, which validates it when first used.
   DATA_ENCRYPTION_KEYS: z.string().optional(),
+  // The bank account clinics pay by transfer, shown on their invoices.
+  BILLING_BANK_DETAILS: z.string().optional(),
   INNGEST_EVENT_KEY: z.string().optional(),
   INNGEST_SIGNING_KEY: z.string().optional(),
 });

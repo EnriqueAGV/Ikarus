@@ -48,6 +48,11 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         <Field label="Correo del doctor" name="ownerEmail" type="email" required />
         <Field label="Especialidad (opcional)" name="specialty" />
         <Field label="N.º JVPM (opcional)" name="jvpmNumber" />
+        <label className="flex flex-col gap-1 text-sm">
+          Días de prueba gratis
+          <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-28 rounded-md border px-3 py-2" />
+          <span className="text-xs text-neutral-500">0 para cobrar desde el inicio.</span>
+        </label>
         <p className="text-sm text-neutral-500">
           Se crea la cuenta del doctor, su agenda y un enlace para conectar el WhatsApp del consultorio. El doctor recibe un correo para crear su contraseña y entrar a su panel.
         </p>

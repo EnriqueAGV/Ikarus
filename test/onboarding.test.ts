@@ -183,6 +183,7 @@ describe("Kapso project webhook", () => {
     expect(templateCalls.map((c) => (c.body as { name: string }).name).sort()).toEqual([
       "praxia_cita_agendada",
       "praxia_cita_cancelada",
+      "praxia_no_asistio",
       "praxia_recordatorio",
       "praxia_seguimiento",
       "praxia_seguimiento_aviso",

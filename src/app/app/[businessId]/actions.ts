@@ -31,6 +31,7 @@ import { addTimeBlock, AgendaError, bookForPatient, moveAppointment, removeTimeB
 import { archivePatient, createPatient, PatientError, restorePatient, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
 import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { formatLocal } from "@/lib/dashboard/labels";
+import { notifyNoShow } from "@/lib/reminders";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -61,7 +62,11 @@ async function settingsChange(
 
 export async function appointmentAction(businessId: string, appointmentId: string, action: BusinessAction) {
   await requireBusinessAccess(businessId);
-  await updateAppointmentByBusiness(businessId, appointmentId, action);
+  const updated = await updateAppointmentByBusiness(businessId, appointmentId, action);
+  // Best effort: the no-show is recorded even if the message can't go out.
+  if (updated && action === "no_show") {
+    await notifyNoShow(updated.id).catch((err) => console.error("no-show follow-up failed", err));
+  }
   revalidatePath(`/app/${businessId}`, "layout");
 }
 
@@ -336,6 +341,8 @@ export async function saveGeneralAction(businessId: string, form: FormData) {
       reminderLeadHours: int(form, "reminderLeadHours"),
       agentInstructions: str(form, "agentInstructions"),
       reminderEndPolicy: form.get("reminderEndPolicy") === "auto_cancel" ? "auto_cancel" : "escalate",
+      faq: str(form, "faq"),
+      noShowFollowUp: checked(form, "noShowFollowUp"),
     }),
   );
 }

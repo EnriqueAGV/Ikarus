@@ -226,6 +226,38 @@ describe("moving an appointment from the dashboard", () => {
   });
 });
 
+describe("after a no-show", () => {
+  async function noShow() {
+    const booked = await bookAppointment({ business, clientId, serviceId, localStart: `${DAY}T10:00`, now: NOW });
+    if (!booked.ok) throw new Error("setup");
+    await db.update(schema.appointments).set({ status: "no_show" }).where(eq(schema.appointments.id, booked.appointment.id));
+    return booked.appointment.id;
+  }
+
+  it("offers the patient a new time on WhatsApp", async () => {
+    await approve("praxia_no_asistio");
+    const { notifyNoShow } = await import("@/lib/reminders");
+    expect(await notifyNoShow(await noShow(), NOW)).toEqual({ notified: true });
+    expect(templateSends()[0].body).toMatchObject({ to: PHONE, template: { name: "praxia_no_asistio" } });
+    const [stored] = await db.select().from(schema.messages).where(eq(schema.messages.clientId, clientId));
+    expect(stored.body).toBe(
+      "Hola Ana, le esperábamos en Clínica Luna el martes 13 de octubre. Si desea una nueva cita, responda a este mensaje y con gusto le buscamos un horario.",
+    );
+  });
+
+  it("stays quiet when the clinic turned it off, the template isn't approved, or it isn't a no-show", async () => {
+    const { notifyNoShow } = await import("@/lib/reminders");
+    const id = await noShow();
+    expect(await notifyNoShow(id, NOW)).toEqual({ notified: false, reason: "template_not_approved" });
+    await approve("praxia_no_asistio");
+    await db.update(schema.businesses).set({ noShowFollowUp: false }).where(eq(schema.businesses.id, business.id));
+    expect(await notifyNoShow(id, NOW)).toEqual({ notified: false, reason: "turned_off" });
+    await db.update(schema.appointments).set({ status: "completed" }).where(eq(schema.appointments.id, id));
+    expect(await notifyNoShow(id, NOW)).toEqual({ notified: false, reason: "wrong_status" });
+    expect(templateSends()).toHaveLength(0);
+  });
+});
+
 describe("blocking time on a doctor's calendar", () => {
   it("takes the blocked hours out of the free times, for the agent too", async () => {
     expect(await slotsOn()).toHaveLength(5);

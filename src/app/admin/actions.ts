@@ -6,6 +6,15 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import { requireSuperAdmin } from "@/lib/auth";
+import {
+  BillingError,
+  issueNextInvoice,
+  markInvoicePaid,
+  setMonthlyPrice,
+  setSuspended,
+  setTrial,
+  voidInvoice,
+} from "@/lib/billing";
 import { encryptExistingRows } from "@/lib/encrypt-backfill";
 import {
   createBusiness,
@@ -22,6 +31,7 @@ const newBusiness = z.object({
   ownerName: z.string().trim().min(2),
   specialty: z.string().trim().optional(),
   jvpmNumber: z.string().trim().optional(),
+  trialDays: z.coerce.number().int().min(0).max(365).default(30),
 });
 
 export async function createBusinessAction(formData: FormData) {
@@ -38,6 +48,45 @@ export async function createBusinessAction(formData: FormData) {
     redirect("/admin/new?error=failed");
   }
   redirect(`/admin/businesses/${businessId}`);
+}
+
+// Billing: trial, price, invoices and suspension, all back to the clinic's page.
+async function billingChange(businessId: string, change: () => Promise<unknown>) {
+  await requireSuperAdmin();
+  let outcome = "billing=saved";
+  try {
+    await change();
+  } catch (err) {
+    if (!(err instanceof BillingError)) throw err;
+    outcome = `billingError=${err.code}`;
+  }
+  revalidatePath(`/admin/businesses/${businessId}`);
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/admin/businesses/${businessId}?${outcome}#billing`);
+}
+
+export async function setTrialAction(businessId: string, form: FormData) {
+  await billingChange(businessId, () => setTrial(businessId, Number(form.get("trialDays"))));
+}
+
+export async function setPriceAction(businessId: string, form: FormData) {
+  await billingChange(businessId, () => setMonthlyPrice(businessId, String(form.get("price") ?? "")));
+}
+
+export async function issueInvoiceAction(businessId: string) {
+  await billingChange(businessId, () => issueNextInvoice(businessId));
+}
+
+export async function markPaidAction(businessId: string, invoiceId: string, form: FormData) {
+  await billingChange(businessId, () => markInvoicePaid(invoiceId, String(form.get("reference") ?? "")));
+}
+
+export async function voidInvoiceAction(businessId: string, invoiceId: string) {
+  await billingChange(businessId, () => voidInvoice(invoiceId));
+}
+
+export async function setSuspendedAction(businessId: string, suspended: boolean) {
+  await billingChange(businessId, () => setSuspended(businessId, suspended));
 }
 
 export async function newSetupLinkAction(businessId: string) {
