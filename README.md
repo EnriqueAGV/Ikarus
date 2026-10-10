@@ -38,6 +38,12 @@ The patient directory has server-side pagination, persistent search/filter conte
 
 See [implementation and verification notes](docs/audits/ux-ui-implementation-2026-10-10.md).
 
+## Live dashboard updates
+
+Apply migration `0015_dashboard_realtime` with `npm run db:migrate` against Supabase before running this version (Vercel's build command already runs migrations). It uses Supabase's `realtime.send` and `realtime.messages`; no patient table publication or Data API read policies are needed. Each signed-in clinic member or super-admin can subscribe only to the clinic's private `dashboard:<businessId>` channel. Browser clients have no broadcast write policy.
+
+Patient, appointment, blocked-hour and conversation changes send an empty notification after the database transaction commits. Open dashboard pages fetch fresh server-rendered data automatically, preserving filters, pagination, scroll and unaffected client form state. The server still checks clinic access and trusted devices on every refresh. Events within 300 ms are grouped; reconnecting or returning to a tab catches up. Visible tabs reconcile every minute to cover missed events, or every 30 seconds while the live connection is unavailable. Hidden tabs wait until visible.
+
 ## Reminders
 
 Every booking starts the `appointment-reminders` Inngest function. At the clinic's lead time before the appointment (24 hours by default) it sends the `praxia_recordatorio` template with Confirmar, Reprogramar and Cancelar buttons. With no reply after 2 hours it sends a follow-up. With no reply 2 hours after that, the clinic's setting decides: by default the appointment stays booked, shows "Sin confirmar, llamar" in the agenda and is listed at the top of Citas for the team to call (`praxia_seguimiento`); with auto-cancel, the follow-up warns about it (`praxia_seguimiento_aviso`), then the appointment is cancelled and the patient gets `praxia_cita_cancelada`. Templates name the clinic, the doctor and the time only, never the service or reason. Any message from the patient stops the flow, and tapping Confirmar marks the appointment confirmed. Cancelling or rescheduling stops it too. Bookings made inside the lead time get no reminder, and nothing is sent until Meta has approved the template.
