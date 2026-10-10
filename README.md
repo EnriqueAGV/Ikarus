@@ -18,7 +18,9 @@ Accounts are created by a super-admin when they add a business. Emails listed in
 
 ## Deploying on Vercel
 
-Import the repo in Vercel and set every variable from `.env.example` under Settings → Environment Variables. The build runs `npm run db:migrate` first (see `vercel.json`), so the Supabase tables are created on each deploy.
+Import the repo in Vercel and set every variable from `.env.example` under Settings → Environment Variables. The build command (`scripts/vercel-build.mjs`, see `vercel.json`) runs `npm run db:migrate` before production builds, so the Supabase tables are created on each production deploy.
+
+Preview deployments must use their own Supabase project or branch: set the database URLs, Supabase keys, Inngest keys and Kapso credentials separately for the Preview environment. Set `PRODUCTION_SUPABASE_PROJECT_REF` (the production project ref, not a secret) for every environment. A preview build or server refuses to run if that variable is missing or if `DATABASE_URL`, `DATABASE_MIGRATION_URL` or `NEXT_PUBLIC_SUPABASE_URL` points at the production project. Previews skip migrations unless `PREVIEW_DB_MIGRATE=1` is set for the Preview environment.
 
 After the first deploy:
 
