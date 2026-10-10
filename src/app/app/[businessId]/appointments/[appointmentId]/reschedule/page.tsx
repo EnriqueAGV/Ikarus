@@ -34,7 +34,7 @@ export default async function RescheduleAppointmentPage({
   if (!live.has(a.status) || a.startsAt <= new Date()) {
     return (
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Mover cita</h2>
+        <h2 className="text-lg font-semibold">Reprogramar cita</h2>
         <p className="text-sm text-neutral-500">Esta cita ya no se puede mover.</p>
         <Link href={base} className="text-sm text-brand hover:underline">
           Volver a la agenda
@@ -57,7 +57,7 @@ export default async function RescheduleAppointmentPage({
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h2 className="text-lg font-semibold">Mover cita</h2>
+        <h2 className="text-lg font-semibold">Reprogramar cita</h2>
         <p className="text-sm">
           <Link href={`${base}/clients/${a.clientId}`} className="font-medium hover:underline">
             {row.clientName ?? formatPhone(row.waPhone)}

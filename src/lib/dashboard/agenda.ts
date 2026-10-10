@@ -1,7 +1,7 @@
-import { and, asc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lt, lte } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { fromLocalString } from "@/lib/booking/availability";
-import { getPractitioner } from "@/lib/booking/practitioners";
+import { dayHours, localDates, fromLocalString } from "@/lib/booking/availability";
+import { getPractitioner, listPractitioners } from "@/lib/booking/practitioners";
 import { bookAppointment, rescheduleByBusiness, type BookResult } from "@/lib/booking/service";
 import { notifyBooked, type NotifyResult } from "@/lib/reminders";
 
@@ -122,4 +122,55 @@ export async function blocksBetween(businessId: string, from: Date, to: Date) {
       ),
     )
     .orderBy(asc(schema.timeBlocks.startsAt));
+}
+
+export type DayHours = { open: boolean; from: string | null; to: string | null; note: string | null };
+
+// When the clinic is open on each local date in [fromDate, toDate], across its
+// active doctors: the earliest start and latest end, or closed with the note
+// of the day off when there is one.
+export async function openingHours(businessId: string, fromDate: string, toDate: string) {
+  const doctors = await listPractitioners(businessId, { activeOnly: true });
+  const ids = doctors.map((d) => d.id);
+  const out = new Map<string, DayHours>();
+  if (!ids.length) return out;
+  const [rules, exceptions] = await Promise.all([
+    db
+      .select()
+      .from(schema.availabilityRules)
+      .where(and(eq(schema.availabilityRules.businessId, businessId), inArray(schema.availabilityRules.practitionerId, ids))),
+    db
+      .select()
+      .from(schema.availabilityExceptions)
+      .where(
+        and(
+          eq(schema.availabilityExceptions.businessId, businessId),
+          inArray(schema.availabilityExceptions.practitionerId, ids),
+          gte(schema.availabilityExceptions.date, fromDate),
+          lte(schema.availabilityExceptions.date, toDate),
+        ),
+      ),
+  ]);
+  for (const date of localDates(fromDate, toDate)) {
+    const windows = ids.flatMap((id) =>
+      dayHours(
+        rules.filter((r) => r.practitionerId === id),
+        exceptions.filter((e) => e.practitionerId === id),
+        date,
+      ),
+    );
+    const note = exceptions.find((e) => e.date === date && !e.startTime && e.note)?.note ?? null;
+    out.set(
+      date,
+      windows.length
+        ? {
+            open: true,
+            from: windows.map((w) => w[0]).sort()[0],
+            to: windows.map((w) => w[1]).sort().at(-1)!,
+            note: null,
+          }
+        : { open: false, from: null, to: null, note },
+    );
+  }
+  return out;
 }

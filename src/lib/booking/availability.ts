@@ -37,16 +37,23 @@ export function localDates(fromDate: string, toDate: string): string[] {
   return out;
 }
 
-function openingWindows(q: SlotQuery, date: string): Array<[Date, Date]> {
-  const overrides = q.exceptions.filter((e) => e.date === date);
+// A local date's opening hours as "HH:mm" pairs: the date's own exceptions
+// when it has any (none with times means closed), otherwise the weekly rules.
+export function dayHours(rules: WeeklyRule[], exceptions: DateException[], date: string): Array<[string, string]> {
+  const overrides = exceptions.filter((e) => e.date === date);
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay();
   const ranges = overrides.length
     ? overrides.filter((e) => e.startTime && e.endTime)
-    : q.rules.filter((r) => r.weekday === weekday);
+    : rules.filter((r) => r.weekday === weekday);
+  return ranges
+    .map((r): [string, string] => [hhmm(r.startTime!), hhmm(r.endTime!)])
+    .sort((a, b) => a[0].localeCompare(b[0]));
+}
 
-  return ranges.map((r) => [
-    fromZonedTime(`${date}T${hhmm(r.startTime!)}:00`, q.timezone),
-    fromZonedTime(`${date}T${hhmm(r.endTime!)}:00`, q.timezone),
+function openingWindows(q: SlotQuery, date: string): Array<[Date, Date]> {
+  return dayHours(q.rules, q.exceptions, date).map(([start, end]) => [
+    fromZonedTime(`${date}T${start}:00`, q.timezone),
+    fromZonedTime(`${date}T${end}:00`, q.timezone),
   ]);
 }
 
