@@ -233,6 +233,32 @@ describe("booking agent", () => {
     expect(out).toHaveLength(1);
   });
 
+  it("offers the earliest times over a few days without asking for a date", async () => {
+    await receive("Hola, quiero una cita");
+    const client = await theClient();
+    const claude = fakeLlm([
+      { tools: [{ name: "find_available_slots", input: { service_id: serviceId, date_from: null, date_to: null } }] },
+      { text: "Tengo estos horarios: …" },
+    ]);
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+
+    const [result] = lastToolResults(claude.requests[1]);
+    expect(result.error).toBe(false);
+    const { suggested, total } = JSON.parse(result.content) as { suggested: { local: string }[]; total: number };
+    // Two per day on the next three open days, starting now, from a 7-day search.
+    expect(suggested.map((s) => s.local)).toEqual([
+      "2026-10-12T10:00",
+      "2026-10-12T10:30",
+      "2026-10-13T09:00",
+      "2026-10-13T09:30",
+      "2026-10-14T09:00",
+      "2026-10-14T09:30",
+    ]);
+    expect(total).toBeGreaterThan(40);
+    // The prompt tells the agent to offer them instead of asking when.
+    expect(String(claude.requests[0].messages[0].content)).toContain("Don't ask when they would like to come");
+  });
+
   it("never books a taken or closed time", async () => {
     await receive("Quiero el martes a las 10");
     const client = await theClient();
