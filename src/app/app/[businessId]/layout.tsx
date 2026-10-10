@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { LogoMark } from "@/components/logo";
 import { SignOutButton } from "@/components/signout-button";
 import { NavLinks } from "@/components/dashboard/nav-links";
+import { DashboardLiveUpdates } from "@/components/dashboard/live-updates";
 import { can, requireBusinessAccess } from "@/lib/auth";
 import { standing } from "@/lib/billing";
 import { standingNotice } from "@/lib/billing-labels";
@@ -31,6 +32,7 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
 
   return (
     <div className="flex flex-1 flex-col">
+      <DashboardLiveUpdates businessId={business.id} />
       <header className="sticky top-0 z-30 border-b border-black/[0.06] bg-background/75 backdrop-blur-xl backdrop-saturate-150 print:hidden">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 pt-4 pb-3 sm:px-6">
           <div className="flex items-center justify-between gap-2">
