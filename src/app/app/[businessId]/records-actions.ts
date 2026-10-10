@@ -16,7 +16,7 @@ const patientPath = (businessId: string, clientId: string) => `/app/${businessId
 
 function back(businessId: string, clientId: string, outcome: string, section: string): never {
   revalidatePath(`/app/${businessId}`, "layout");
-  redirect(`${patientPath(businessId, clientId)}?${outcome}#${section}`);
+  redirect(`${patientPath(businessId, clientId)}?view=${section === "datos" ? "data" : section === "duplicados" ? "manage" : "clinical"}&${outcome}#${section}`);
 }
 
 export async function changePhoneAction(businessId: string, clientId: string, form: FormData) {

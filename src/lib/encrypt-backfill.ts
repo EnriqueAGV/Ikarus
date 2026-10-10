@@ -15,16 +15,18 @@ export async function encryptExistingRows() {
   let messages = 0;
 
   for (let after = ""; ; ) {
-    const rows = await db.execute<{ id: string; data: string; dui: string | null; allergies: string | null; chronic_conditions: string | null }>(
-      sql`select id, data, dui, allergies, chronic_conditions from clients where id::text > ${after} order by id::text limit ${BATCH}`,
+    const rows = await db.execute<{ id: string; data: string; dui: string | null; allergies: string | null; chronic_conditions: string | null; attention_reason: string | null; intake_review: string }>(
+      sql`select id, data, dui, allergies, chronic_conditions, attention_reason, intake_review from clients where id::text > ${after} order by id::text limit ${BATCH}`,
     );
     if (rows.length === 0) break;
     for (const r of rows) {
-      if (![r.data, r.dui, r.allergies, r.chronic_conditions].some(stale)) continue;
+      if (![r.data, r.dui, r.allergies, r.chronic_conditions, r.attention_reason, r.intake_review].some(stale)) continue;
       const plain = (v: string | null, column: string) => (v === null ? null : decrypt(v, `clients.${column}`));
       await db
         .update(schema.clients)
         .set({
+          attentionReason: plain(r.attention_reason, "attention_reason"),
+          intakeReview: JSON.parse(plain(r.intake_review, "intake_review")!),
           data: JSON.parse(plain(r.data, "data")!),
           dui: plain(r.dui, "dui"),
           allergies: plain(r.allergies, "allergies"),

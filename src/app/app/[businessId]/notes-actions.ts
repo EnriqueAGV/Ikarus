@@ -37,7 +37,7 @@ export async function startNoteAction(businessId: string, clientId: string, appo
     noteId = await createNote(membership, clientId, appointmentId);
   } catch (err) {
     if (!(err instanceof NoteError)) throw err;
-    redirect(`/app/${businessId}/clients/${clientId}?recordError=${err.code}#notas`);
+    redirect(`/app/${businessId}/clients/${clientId}?view=clinical&recordError=${err.code}#notas`);
   }
   redirect(notePath(businessId, clientId, noteId));
 }
@@ -81,7 +81,7 @@ export async function deleteDraftAction(businessId: string, clientId: string, no
     redirect(`${notePath(businessId, clientId, noteId)}?error=${err.code}`);
   }
   revalidatePath(`/app/${businessId}/clients/${clientId}`);
-  redirect(`/app/${businessId}/clients/${clientId}#notas`);
+  redirect(`/app/${businessId}/clients/${clientId}?view=clinical#notas`);
 }
 
 export async function addAddendumAction(businessId: string, clientId: string, noteId: string, form: FormData) {

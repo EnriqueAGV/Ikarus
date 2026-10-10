@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   boolean,
   customType,
+  check,
   date,
   doublePrecision,
   index,
@@ -333,7 +334,12 @@ export const clients = pgTable(
     data: encryptedJson<Record<string, unknown>>("data", "clients.data")
       .notNull()
       .$defaultFn(() => ({})),
+    intakeReview: encryptedJson<import("../lib/dashboard/intake-review").IntakeReview>("intake_review", "clients.intake_review").notNull().$defaultFn(() => ({})),
     agentPaused: boolean("agent_paused").notNull().default(false),
+    attentionStatus: text("attention_status").$type<"needs_reply" | "follow_up" | "resolved">(),
+    attentionSince: timestamp("attention_since", { withTimezone: true }),
+    attentionReason: encryptedText("attention_reason", "clients.attention_reason"),
+    attentionUrgent: boolean("attention_urgent").notNull().default(false),
     // The record header. Patients belong to the clinic, so a patient seen by
     // two doctors has one record.
     dateOfBirth: date("date_of_birth"),
@@ -365,6 +371,8 @@ export const clients = pgTable(
       .where(sql`${t.holderId} is null and ${t.waPhone} is not null`),
     index("clients_phone").on(t.businessId, t.waPhone),
     index("clients_holder").on(t.holderId),
+    index("clients_attention").on(t.businessId, t.attentionStatus, t.attentionSince).where(sql`${t.holderId} is null and ${t.archivedAt} is null`),
+    check("clients_attention_status", sql`${t.attentionStatus} in ('needs_reply', 'follow_up', 'resolved')`),
   ],
 );
 
@@ -657,3 +665,14 @@ export const LIVE_APPOINTMENT_STATUSES = [
   "confirmed",
 ] as const;
 
+
+// A durable claim prevents repeated submissions from sending the same reply twice.
+export const staffReplyAttempts = pgTable("staff_reply_attempts", {
+  id: uuid("id").primaryKey(),
+  businessId: businessId(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  sentBy: text("sent_by").notNull(),
+  contentHash: text("content_hash").notNull(),
+  status: text("status").$type<"pending" | "sent" | "uncertain">().notNull().default("pending"),
+  createdAt: createdAt(),
+}, t => [check("staff_reply_attempts_status", sql`${t.status} in ('pending', 'sent', 'uncertain')`)]).enableRLS();

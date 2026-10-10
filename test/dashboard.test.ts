@@ -527,3 +527,30 @@ describe("patients registered by hand", () => {
   });
 });
 
+
+describe("reply submission recovery", () => {
+  it("claims a repeated reply once and keeps human work in follow-up", async () => {
+    await db.insert(schema.messages).values({ businessId: business.id, clientId, direction: "inbound", type: "text", body: "Hola", createdAt: NOW });
+    const attemptId = crypto.randomUUID();
+    const input = { business, clientId, text: "Respuesta", sentBy: "staff-1", now: NOW, attemptId };
+    expect(await sendStaffReply(input)).toEqual({ ok: true });
+    expect(await sendStaffReply(input)).toEqual({ ok: true });
+    expect(await sendStaffReply({ ...input, text: "Otro mensaje" })).toEqual({ ok: false, reason: "attempt_changed" });
+    expect(kapso.calls).toHaveLength(1);
+    const [patient] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(patient.attentionStatus).toBe("follow_up");
+  });
+  it("blocks a free-text reply at the exact service-window boundary", async () => {
+    await db.insert(schema.messages).values({ businessId: business.id, clientId, direction: "inbound", type: "text", body: "Hola", createdAt: new Date(NOW.getTime() - 86400000) });
+    expect(await sendStaffReply({ business, clientId, text: "Respuesta", sentBy: "staff-1", now: NOW })).toEqual({ ok: false, reason: "window_closed" });
+    expect(kapso.calls).toHaveLength(0);
+  });
+  it("does not resend an uncertain provider attempt", async () => {
+    await db.insert(schema.messages).values({ businessId: business.id, clientId, direction: "inbound", type: "text", body: "Hola", createdAt: NOW });
+    const attemptId = crypto.randomUUID();
+    const { createHash } = await import("node:crypto");
+    await db.insert(schema.staffReplyAttempts).values({ id: attemptId, businessId: business.id, clientId, sentBy: "staff-1", status: "uncertain", contentHash: createHash("sha256").update(`${attemptId}:Respuesta`).digest("hex") });
+    expect(await sendStaffReply({ business, clientId, text: "Respuesta", sentBy: "staff-1", now: NOW, attemptId })).toEqual({ ok: false, reason: "send_uncertain" });
+    expect(kapso.calls).toHaveLength(0);
+  });
+});

@@ -1,3 +1,4 @@
+import { openAttention } from "@/lib/messaging/attention";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
@@ -158,7 +159,7 @@ export async function apologizeAndHandOff(businessId: string, clientId: string) 
   const [business] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, businessId));
   const client = await reloadClient(businessId, clientId);
   if (!business?.phoneNumberId || !client?.waPhone) return;
-  await db.update(schema.clients).set({ agentPaused: true }).where(eq(schema.clients.id, client.id));
+  await openAttention(business.id, client.id, "El asistente necesita ayuda del equipo");
   const [last] = await db
     .select({ direction: schema.messages.direction })
     .from(schema.messages)
@@ -203,7 +204,7 @@ async function answerEmergency(business: Business, client: Client, now: Date): P
   const unanswered = lastOutbound === -1 ? recent : recent.slice(0, lastOutbound);
   if (!unanswered.some((m) => m.direction === "inbound" && isEmergency(m.body))) return null;
 
-  await db.update(schema.clients).set({ agentPaused: true }).where(eq(schema.clients.id, client.id));
+  await openAttention(business.id, client.id, "Mensaje marcado para revisión urgente", true, now);
   const lastEmergencyReply = recent.find((m) => m.direction === "outbound" && isEmergencyReply(m));
   if (lastEmergencyReply && now.getTime() - lastEmergencyReply.createdAt.getTime() < EMERGENCY_REPEAT_MS) {
     return { status: "emergency", replied: false };

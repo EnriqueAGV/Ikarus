@@ -138,53 +138,55 @@ export async function needingCall(businessId: string, now = new Date()) {
     .orderBy(asc(schema.appointments.startsAt));
 }
 
-// Archived patients only show when asked for, and then only they do.
-export async function listClients(businessId: string, query?: string, opts: { archived?: boolean } = {}) {
-  const q = query?.trim();
-  const lastAppointment = sql<Date | null>`max(${schema.appointments.startsAt})`;
-  return db
-    .select({
-      client: schema.clients,
-      appointmentCount: sql<number>`count(${schema.appointments.id})::int`,
-      lastAppointment,
-    })
-    .from(schema.clients)
-    .leftJoin(schema.appointments, eq(schema.appointments.clientId, schema.clients.id))
-    .where(
-      and(
-        eq(schema.clients.businessId, businessId),
-        opts.archived ? isNotNull(schema.clients.archivedAt) : isNull(schema.clients.archivedAt),
-        q ? or(ilike(schema.clients.name, `%${q}%`), ilike(schema.clients.waPhone, `%${q.replace(/\D/g, "") || q}%`)) : undefined,
-      ),
-    )
-    .groupBy(schema.clients.id)
-    .orderBy(desc(schema.clients.agentPaused), desc(schema.clients.createdAt))
-    .limit(200);
+export type PatientListOptions = { archived?: boolean; page?: number; pageSize?: number; sort?: "name" | "recent" };
+const patientFilter = (businessId: string, query = "", archived = false) => and(
+  eq(schema.clients.businessId, businessId), archived ? isNotNull(schema.clients.archivedAt) : isNull(schema.clients.archivedAt),
+  query.trim() ? or(ilike(schema.clients.name, `%${query.trim()}%`), ilike(schema.clients.waPhone, `%${query.replace(/\D/g, "") || query.trim()}%`)) : undefined,
+);
+const dateColumn = (value: unknown) => value === null ? null : new Date(String(value));
+export async function listClients(businessId: string, query?: string, opts: PatientListOptions = {}) {
+  return db.select({
+    client: schema.clients,
+    appointmentCount: sql<number>`(select count(*)::int from appointments a where a.client_id = clients.id)`,
+    lastAppointment: sql<Date | null>`(select max(a.starts_at) from appointments a where a.client_id = clients.id and a.status = 'completed')`.mapWith(dateColumn),
+    nextAppointment: sql<Date | null>`(select min(a.starts_at) from appointments a where a.client_id = clients.id and a.ends_at >= now() and a.status in ('booked', 'reminder_sent', 'followup_sent', 'confirmed'))`.mapWith(dateColumn),
+    conversationPaused: sql<boolean>`(select c.agent_paused from clients c where c.id = coalesce(clients.holder_id, clients.id))`,
+    conversationStatus: sql<string | null>`(select c.attention_status from clients c where c.id = coalesce(clients.holder_id, clients.id))`,
+    sharedNumber: sql<boolean>`clients.holder_id is not null or exists(select 1 from clients c where c.holder_id = clients.id and c.archived_at is null)`,
+  }).from(schema.clients).where(patientFilter(businessId, query, opts.archived))
+    .orderBy(opts.sort === "name" ? asc(schema.clients.name) : desc(schema.clients.createdAt), asc(schema.clients.id))
+    .limit(opts.pageSize ?? 1000).offset(((opts.page ?? 1) - 1) * (opts.pageSize ?? 1000));
+}
+export async function patientCount(businessId: string, query?: string, archived = false) {
+  const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(schema.clients).where(patientFilter(businessId, query, archived));
+  return row.count;
 }
 
 // A patient with their appointments, and the WhatsApp conversation of their
 // number, which belongs to the number's holder when they share it.
-export async function getClientDetail(businessId: string, clientId: string) {
+export async function getClientDetail(businessId: string, clientId: string, messageLimit = 50) {
   const [client] = await db
     .select()
     .from(schema.clients)
     .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
   if (!client) return null;
   const holderId = conversationId(client);
-  const [appointments, messages, sharing] = await Promise.all([
+  const [appointments, messages, sharing, inbound] = await Promise.all([
     db
-      .select({ appointment: schema.appointments, serviceName: schema.services.name })
+      .select({ appointment: schema.appointments, serviceName: schema.services.name, practitionerName: schema.practitioners.displayName })
       .from(schema.appointments)
       .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
+      .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.appointments.practitionerId))
       .where(eq(schema.appointments.clientId, client.id))
       .orderBy(desc(schema.appointments.startsAt)),
     db
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.clientId, holderId))
-      .orderBy(desc(schema.messages.createdAt))
-      .limit(50),
+      .orderBy(desc(schema.messages.createdAt), desc(schema.messages.id))
+      .limit(Math.min(1000, Math.max(50, messageLimit)) + 1),
     client.waPhone ? household(businessId, holderId) : Promise.resolve([client]),
+    db.select({ createdAt: schema.messages.createdAt }).from(schema.messages).where(and(eq(schema.messages.businessId, businessId), eq(schema.messages.clientId, holderId), eq(schema.messages.direction, "inbound"))).orderBy(desc(schema.messages.createdAt)).limit(1),
   ]);
   const conversation = sharing.find((p) => p.id === holderId) ?? client;
   return {
@@ -192,19 +194,25 @@ export async function getClientDetail(businessId: string, clientId: string) {
     conversation,
     others: sharing.filter((p) => p.id !== client.id),
     appointments,
-    messages: messages.reverse(),
+    lastInboundAt: inbound[0]?.createdAt ?? null,
+    hasOlderMessages: messages.length > messageLimit,
+    messages: messages.slice(0, messageLimit).reverse(),
   };
 }
 
 // The pause is on the number's conversation, so it covers everyone sharing it.
 export async function setAgentPaused(businessId: string, clientId: string, paused: boolean) {
   const [client] = await db
-    .select({ id: schema.clients.id, holderId: schema.clients.holderId })
+    .select({ id: schema.clients.id, holderId: schema.clients.holderId, archivedAt: schema.clients.archivedAt, mergedIntoId: schema.clients.mergedIntoId })
     .from(schema.clients)
     .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, businessId)));
-  if (!client) return;
+  if (!client || client.archivedAt || client.mergedIntoId) return;
   await db
     .update(schema.clients)
-    .set({ agentPaused: paused })
+    .set(paused ? {
+      agentPaused: true,
+      attentionStatus: "needs_reply",
+      attentionSince: sql`coalesce(${schema.clients.attentionSince}, now())`,
+    } : { agentPaused: false })
     .where(and(eq(schema.clients.id, conversationId(client)), eq(schema.clients.businessId, businessId)));
 }

@@ -157,13 +157,13 @@ describe("merging duplicate patients", () => {
     expect((await reload(kid.id)).holderId).toBe(mom.id);
   });
 
-  it("suggests records with the same number or a similar name", async () => {
+  it("suggests similar names without treating shared numbers as duplicates", async () => {
     const ana = await patient({ name: "Ana María López", waPhone: "50370000001" });
     await patient({ name: "Ana López", waPhone: null });
     await patient({ name: "Pedro Ruiz", waPhone: "50370000001", holderId: ana.id });
     await patient({ name: "Luis Gómez" });
     const names = (await patients.duplicateCandidates(business.id, ana)).map((d) => d.name).sort();
-    expect(names).toEqual(["Ana López", "Pedro Ruiz"]);
+    expect(names).toEqual(["Ana López"]);
     expect((await patients.duplicateCandidates(business.id, ana, "gómez")).map((d) => d.name)).toEqual(["Luis Gómez"]);
   });
 });
@@ -226,11 +226,11 @@ describe("attachments", () => {
 });
 
 describe("conversations waiting on the team", () => {
-  it("lists paused numbers, the ones where the patient wrote last first", async () => {
+  it("lists explicit human work without treating automated messages as resolution", async () => {
     const now = Date.now();
     const waitingLong = await patient({ name: "Ana", waPhone: "50370000001", agentPaused: true });
     const waitingShort = await patient({ name: "Luis", waPhone: "50370000002", agentPaused: true });
-    const answered = await patient({ name: "Rosa", waPhone: "50370000003", agentPaused: true });
+    const answered = await patient({ name: "Rosa", waPhone: "50370000003", agentPaused: true, attentionStatus: "follow_up" });
     const running = await patient({ name: "Pedro", waPhone: "50370000004" });
     await message(waitingLong.id, "inbound", "¿Me pueden llamar?", new Date(now - 3 * 3_600_000));
     await message(waitingShort.id, "outbound", "Hola", new Date(now - 7_200_000));
@@ -306,5 +306,101 @@ describe("clinic location", () => {
     ).rejects.toThrow("invalid_maps_link");
     await updateBusinessSettings(business.id, { reminderLeadHours: 24, agentInstructions: "", mapsUrl: "" });
     expect(await db.select().from(schema.businesses)).toMatchObject([{ locationLat: null, mapsUrl: null }]);
+  });
+});
+
+// Regressions for the audit: automated acknowledgment is distinct from human work.
+describe("human work and patient directory", () => {
+  it("keeps work pending when a new message makes the resolution preview stale", async () => {
+    const { resolveConversation } = await import("@/lib/dashboard/inbox");
+    const holder = await patient({ name: "Contacto", attentionStatus: "needs_reply", agentPaused: true });
+    await message(holder.id, "inbound", "Primera pregunta", new Date("2026-10-10T12:00:00Z"));
+    const [first] = await db.select().from(schema.messages).where(eq(schema.messages.clientId, holder.id));
+    await message(holder.id, "inbound", "Otra pregunta", new Date("2026-10-10T12:01:00Z"));
+    expect(await resolveConversation(business.id, holder.id, first.id)).toBe(false);
+    expect((await reload(holder.id)).attentionStatus).toBe("needs_reply");
+  });
+  it("keeps automated acknowledgments actionable, preserves age and resolves explicitly", async () => {
+    const { openAttention } = await import("@/lib/messaging/attention");
+    const { resolveConversation } = await import("@/lib/dashboard/inbox");
+    const start = new Date("2026-10-10T12:00:00Z");
+    const holder = await patient({ name: "Contacto", waPhone: "50370000101" });
+    await message(holder.id, "inbound", "Necesito ayuda", start);
+    await openAttention(business.id, holder.id, "Revisión urgente", true, start);
+    await message(holder.id, "outbound", "El equipo revisará tu mensaje", new Date(start.getTime() + 1000));
+    await openAttention(business.id, holder.id, "Seguimiento", false, new Date(start.getTime() + 60000));
+    expect(await waitingCount(business.id)).toBe(1);
+    const [row] = await pausedConversations(business.id);
+    expect(row.waiting).toBe(true);
+    expect(row.client.attentionSince).toEqual(start);
+    expect(row.client.attentionUrgent).toBe(true);
+    await resolveConversation(business.id, holder.id);
+    expect(await waitingCount(business.id)).toBe(0);
+    expect((await reload(holder.id)).agentPaused).toBe(true);
+    const { storeInbound } = await import("@/lib/messaging/inbound");
+    await db.update(schema.businesses).set({ phoneNumberId: "number-audit" }).where(eq(schema.businesses.id, business.id));
+    await storeInbound({ phone_number_id: "number-audit", message: { id: "message-audit", from: "50370000101", type: "text", text: { body: "Otra pregunta" } } });
+    expect(await waitingCount(business.id)).toBe(1);
+    expect((await reload(holder.id)).attentionStatus).toBe("needs_reply");
+  });
+
+  it("paginates more than 200 patients and orders the full urgent queue before paging", async () => {
+    const { listClients, patientCount } = await import("@/lib/dashboard/appointments");
+    await db.insert(schema.clients).values(Array.from({ length: 205 }, (_, i) => ({ businessId: business.id, name: `Paciente ${String(i).padStart(3, "0")}`, agentPaused: true, attentionStatus: "needs_reply" as const, attentionSince: new Date(1700000000000 + i * 1000), attentionUrgent: i === 204 })));
+    expect(await patientCount(business.id)).toBe(205);
+    expect((await listClients(business.id, "", { page: 9, pageSize: 25, sort: "name" })).map(r => r.client.name)).toEqual(["Paciente 200", "Paciente 201", "Paciente 202", "Paciente 203", "Paciente 204"]);
+    expect((await pausedConversations(business.id, { page: 1, pageSize: 25 }))[0].client.name).toBe("Paciente 204");
+    expect(await waitingCount(business.id)).toBe(205);
+  });
+
+  it("distinguishes next live appointment, last attended visit and shared conversation state", async () => {
+    const { listClients } = await import("@/lib/dashboard/appointments");
+    const holder = await patient({ name: "Madre", waPhone: "50370000102", agentPaused: true, attentionStatus: "follow_up" });
+    const child = await patient({ name: "Hija", waPhone: holder.waPhone, holderId: holder.id });
+    const past = new Date(Date.now() - 86400000);
+    const next = new Date(Date.now() + 86400000);
+    await appointment(child.id, past, { status: "completed" });
+    await appointment(child.id, next, { status: "booked" });
+    await appointment(child.id, new Date(next.getTime() + 86400000), { status: "cancelled_by_business" });
+    const row = (await listClients(business.id, "Hija"))[0];
+    expect(row.lastAppointment?.getTime()).toBeCloseTo(past.getTime(), -1);
+    expect(row.nextAppointment?.getTime()).toBeCloseTo(next.getTime(), -1);
+    expect(row.conversationPaused).toBe(true);
+    expect(row.conversationStatus).toBe("follow_up");
+    expect(row.sharedNumber).toBe(true);
+  });
+
+  it("rejects a stale archive preview without partially cancelling appointments", async () => {
+    const p = await patient({ name: "Persona" });
+    const first = await appointment(p.id, new Date(Date.now() + 86400000));
+    await appointment(p.id, new Date(Date.now() + 90000000));
+    await expect(patients.archivePatient(assistant, p.id, new Date(), [first.id])).rejects.toThrow("record_changed");
+    expect((await reload(p.id)).archivedAt).toBeNull();
+    expect((await db.select().from(schema.appointments).where(eq(schema.appointments.clientId, p.id))).every(a => a.status === "booked")).toBe(true);
+  });
+
+  it("requires fresh merge comparison and preserves open human work when merging", async () => {
+    const { mergeReviewToken } = await import("@/lib/dashboard/record-review");
+    const keep = await patient({ name: "Paciente principal" });
+    const drop = await patient({ name: "Paciente duplicado", waPhone: "50370000103", agentPaused: true, attentionStatus: "needs_reply", attentionUrgent: true, attentionSince: new Date("2026-10-10T12:00:00Z") });
+    const token = mergeReviewToken(keep, drop);
+    await db.update(schema.clients).set({ dateOfBirth: "2000-01-01" }).where(eq(schema.clients.id, drop.id));
+    await expect(patients.mergePatients(assistant, keep.id, drop.id, new Date(), token)).rejects.toThrow("record_changed");
+    expect((await reload(drop.id)).mergedIntoId).toBeNull();
+    await patients.mergePatients(assistant, keep.id, drop.id, new Date(), mergeReviewToken(await reload(keep.id), await reload(drop.id)));
+    expect((await reload(keep.id)).attentionStatus).toBe("needs_reply");
+    expect(await waitingCount(business.id)).toBe(1);
+  });
+
+  it("reviews received data without overwriting its source, and rejects stale sources", async () => {
+    const p = await patient({ name: "Persona", dateOfBirth: "2000-01-01", data: { fecha_nacimiento: "2001-02-03", numero_dui: "012345678" } });
+    await patients.reviewIntake(assistant, p.id, "fecha_nacimiento", "2001-02-03", "record");
+    expect((await reload(p.id)).dateOfBirth).toBe("2000-01-01");
+    expect((await reload(p.id)).intakeReview.fecha_nacimiento.received).toBe("2001-02-03");
+    await patients.reviewIntake(assistant, p.id, "numero_dui", "012345678", "received");
+    expect((await reload(p.id)).dui).toBe("01234567-8");
+    expect((await reload(p.id)).data.numero_dui).toBe("012345678");
+    await expect(patients.reviewIntake(assistant, p.id, "fecha_nacimiento", "1999-01-01", "received")).rejects.toThrow("record_changed");
+    expect((await patients.recentAccess(business.id, p.id)).filter(a => a.action === "edit_chart")).toHaveLength(2);
   });
 });

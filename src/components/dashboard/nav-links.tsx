@@ -17,10 +17,13 @@ export function NavLinks({ links }: { links: NavLink[] }) {
   useLayoutEffect(() => {
     const el = refs.current[active];
     if (!el) return setPill(null);
-    setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    const measure = () => setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    measure();
+    const observer = new ResizeObserver(measure);
+    for (const link of refs.current) if (link) observer.observe(link);
     // No slide on the first paint, only between sections.
     const id = requestAnimationFrame(() => setAnimate(true));
-    return () => cancelAnimationFrame(id);
+    return () => { cancelAnimationFrame(id); observer.disconnect(); };
   }, [active, links.length]);
 
   return (
@@ -30,7 +33,7 @@ export function NavLinks({ links }: { links: NavLink[] }) {
           <span
             aria-hidden
             className={`absolute top-1 bottom-1 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.1),0_1px_1px_rgb(0_0_0/0.04)] ${
-              animate ? "transition-[left,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]" : ""
+              animate ? "motion-safe:transition-[left,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]" : ""
             }`}
             style={{ left: pill.left, width: pill.width }}
           />
