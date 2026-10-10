@@ -68,7 +68,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   return (
     <div className="flex flex-col gap-4">
       {toCall.length > 0 && (
-        <section className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+        <section className="notice notice-error text-sm">
           <p className="font-medium">
             {toCall.length === 1 ? "1 paciente no confirmó su cita" : `${toCall.length} pacientes no confirmaron su cita`}. Llámalos para confirmar o cancelar.
           </p>
@@ -86,22 +86,22 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
         </section>
       )}
       {success && (
-        <p className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-200">
+        <p className="notice notice-ok text-sm">
           {success}
         </p>
       )}
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <Link href={`${base}/appointments/new`} className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
+          <Link href={`${base}/appointments/new`} className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">
             Nueva cita
           </Link>
-          <div className="flex gap-1 rounded-md border p-0.5 text-sm">
+          <div className="rounded-full bg-black/[0.05] p-1 flex gap-1 text-sm">
             {(["day", "week", "list"] as const).map((v) => (
               <Link
                 key={v}
                 href={href(v)}
-                className={`rounded px-3 py-1 ${view === v ? "bg-brand text-white" : ""}`}
+                className={`rounded-full px-3.5 py-1 ${view === v ? "bg-white font-medium text-foreground shadow-sm" : "text-neutral-600 hover:text-foreground"}`}
               >
                 {{ day: "Día", week: "Semana", list: "Próximas" }[v]}
               </Link>
@@ -110,16 +110,16 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
         </div>
         {view !== "list" && (
           <div className="flex items-center gap-2 text-sm">
-            <Link href={href(view, shiftDate(date, -days))} className="rounded-md border px-2 py-1" aria-label="Anterior">
+            <Link href={href(view, shiftDate(date, -days))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50" aria-label="Anterior">
               ←
             </Link>
-            <Link href={href(view, today)} className="rounded-md border px-3 py-1">
+            <Link href={href(view, today)} className="rounded-full border bg-white px-4 py-1.5 hover:bg-neutral-50">
               Hoy
             </Link>
-            <Link href={href(view, shiftDate(date, days))} className="rounded-md border px-2 py-1" aria-label="Siguiente">
+            <Link href={href(view, shiftDate(date, days))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50" aria-label="Siguiente">
               →
             </Link>
-            <span className="ml-2 font-medium capitalize">
+            <span className="ml-2 inline-block font-medium first-letter:uppercase">
               {view === "day"
                 ? formatLocal(new Date(`${date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM")
                 : `${formatLocal(new Date(`${from}T12:00:00Z`), "UTC", "d MMM")} – ${formatLocal(
@@ -137,7 +137,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           {Array.from({ length: 7 }, (_, i) => shiftDate(from, i)).map((d) => {
             const dayRows = rows.filter((r) => formatLocal(r.appointment.startsAt, tz, "yyyy-MM-dd") === d);
             return (
-              <section key={d} className={`rounded-md border p-2 ${d === today ? "border-brand" : ""}`}>
+              <section key={d} className={`card p-3 ${d === today ? "ring-2 ring-brand/30" : ""}`}>
                 <Link href={href("day", d)} className="mb-2 block text-xs font-medium capitalize hover:underline">
                   {formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}
                 </Link>
@@ -164,11 +164,11 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
           })}
         </div>
       ) : rows.length === 0 ? (
-        <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
+        <p className="card p-8 text-center text-sm text-neutral-500">
           {view === "list" ? "No hay citas próximas." : "No hay citas este día."}
         </p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="card divide-y overflow-hidden">
           {rows.map((r) => (
             <AppointmentRow key={r.appointment.id} row={r} tz={tz} base={base} now={now} showDate={view === "list"} showDoctor={showDoctor} consult={consults && formatLocal(r.appointment.startsAt, tz, "yyyy-MM-dd") === today} />
           ))}
@@ -176,8 +176,8 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
       )}
 
       {view === "day" && doctors.length > 0 && (
-        <section id="bloqueos" className="flex flex-col gap-2 rounded-md border p-4">
-          <h2 className="text-sm font-medium">Horarios bloqueados</h2>
+        <section id="bloqueos" className="card flex flex-col gap-2 p-5">
+          <h2 className="text-sm font-semibold">Horarios bloqueados</h2>
           <p className="text-xs text-neutral-500">
             Un horario bloqueado no se ofrece a los pacientes, ni por WhatsApp ni al agendar aquí. Las citas que ya
             estaban agendadas se quedan.
@@ -194,7 +194,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                     {block.note && <span className="text-neutral-500"> · {block.note}</span>}
                   </span>
                   <form action={removeTimeBlockAction.bind(null, business.id, block.id, date)}>
-                    <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                    <button className="rounded-full border px-3 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white">
                       Quitar
                     </button>
                   </form>
@@ -207,7 +207,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
             {showDoctor ? (
               <label className="flex flex-col gap-1 text-xs text-neutral-500">
                 Doctor
-                <select name="practitionerId" className="rounded-md border px-2 py-1 text-sm">
+                <select name="practitionerId" className="rounded-xl border px-2 py-1.5 text-sm">
                   {doctors.map((d) => (
                     <option key={d.id} value={d.id}>
                       {d.displayName}
@@ -220,17 +220,17 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
             )}
             <label className="flex flex-col gap-1 text-xs text-neutral-500">
               Desde
-              <input type="time" name="startTime" required className="rounded-md border px-2 py-1 text-sm" />
+              <input type="time" name="startTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
             </label>
             <label className="flex flex-col gap-1 text-xs text-neutral-500">
               Hasta
-              <input type="time" name="endTime" required className="rounded-md border px-2 py-1 text-sm" />
+              <input type="time" name="endTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
             </label>
             <label className="flex flex-col gap-1 text-xs text-neutral-500">
               Nota (opcional)
-              <input name="note" placeholder="Almuerzo, cirugía…" className="rounded-md border px-2 py-1 text-sm" />
+              <input name="note" placeholder="Almuerzo, cirugía…" className="rounded-xl border px-2 py-1.5 text-sm" />
             </label>
-            <button className="rounded-md border px-3 py-1 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900">
+            <button className="rounded-full border px-4 py-1 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white">
               Bloquear horario
             </button>
           </form>
@@ -281,31 +281,31 @@ function AppointmentRow({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded px-2 py-0.5 text-xs ${appointmentTone(a)}`}>{appointmentLabel(a)}</span>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${appointmentTone(a)}`}>{appointmentLabel(a)}</span>
         {consult && (isLive || a.status === "completed") && (
           <form action={startNoteAction.bind(null, a.businessId, a.clientId, a.id)}>
-            <button className="rounded-md bg-brand px-2 py-1 text-xs text-white hover:bg-brand-hover">Iniciar consulta</button>
+            <button className="rounded-full bg-brand px-3 py-1 text-xs text-white hover:bg-brand-hover font-medium shadow-sm">Iniciar consulta</button>
           </form>
         )}
         {isLive && !started && a.status !== "confirmed" && (
           <form action={act("confirm")}>
-            <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">Confirmar</button>
+            <button className="rounded-full border px-3 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white">Confirmar</button>
           </form>
         )}
         {isLive && started && (
           <>
             <form action={act("completed")}>
-              <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">Atendida</button>
+              <button className="rounded-full border px-3 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white">Atendida</button>
             </form>
             <form action={act("no_show")}>
-              <button className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">No asistió</button>
+              <button className="rounded-full border px-3 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white">No asistió</button>
             </form>
           </>
         )}
         {isLive && !started && (
           <Link
             href={`${base}/appointments/${a.id}/reschedule`}
-            className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            className="rounded-full border px-3 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white"
           >
             Mover
           </Link>
@@ -314,7 +314,7 @@ function AppointmentRow({
           <form action={act("cancel")}>
             <ConfirmButton
               message="¿Cancelar esta cita? El horario quedará libre."
-              className="rounded-md border px-2 py-1 text-xs text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+              className="rounded-full border px-3 py-1 text-xs text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950 bg-white"
             >
               Cancelar
             </ConfirmButton>

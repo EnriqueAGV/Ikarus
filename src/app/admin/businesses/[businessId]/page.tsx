@@ -94,8 +94,8 @@ export default async function AdminBusinessPage({
         </Link>
       </header>
 
-      <section className="mb-8 rounded-md border p-4">
-        <h2 className="mb-2 font-medium">WhatsApp</h2>
+      <section className="card mb-8 p-5">
+        <h2 className="mb-2 font-semibold">WhatsApp</h2>
         <p className="text-sm">
           {statusLabel[business.status]}
           {business.displayPhone ? ` · ${business.displayPhone}` : ""}
@@ -124,9 +124,9 @@ export default async function AdminBusinessPage({
         )}
       </section>
 
-      <section className="mb-8 rounded-md border p-4">
+      <section className="card mb-8 p-5">
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-medium">Plantillas de mensajes</h2>
+          <h2 className="font-semibold">Plantillas de mensajes</h2>
           {business.wabaId && (
             <form action={syncTemplatesAction.bind(null, business.id)}>
               <button className="text-sm underline">Crear faltantes y actualizar estado</button>
@@ -150,9 +150,9 @@ export default async function AdminBusinessPage({
         )}
       </section>
 
-      <section id="billing" className="mb-8 flex flex-col gap-3 rounded-md border p-4">
+      <section id="billing" className="card mb-8 flex flex-col gap-3 p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-medium">Plan y pagos</h2>
+          <h2 className="font-semibold">Plan y pagos</h2>
           <span className="text-sm">{standingLabel(billing, business.timezone)}</span>
         </div>
         {billingMessage && <p className="text-sm text-red-600">{billingMessage}</p>}
@@ -164,22 +164,22 @@ export default async function AdminBusinessPage({
                 name="price"
                 inputMode="decimal"
                 defaultValue={business.monthlyPriceCents ? (business.monthlyPriceCents / 100).toFixed(2) : ""}
-                className="w-28 rounded-md border px-2 py-1 text-sm"
+                className="w-28 rounded-xl border px-2 py-1.5 text-sm"
               />
             </label>
-            <button className="rounded-md border px-2 py-1">Guardar</button>
+            <button className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50">Guardar</button>
           </form>
           <form action={setTrialAction.bind(null, business.id)} className="flex items-end gap-2">
             <label className="flex flex-col gap-1 text-xs text-neutral-500">
               Prueba gratis: días desde hoy
-              <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-24 rounded-md border px-2 py-1 text-sm" />
+              <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-24 rounded-xl border px-2 py-1.5 text-sm" />
             </label>
-            <button className="rounded-md border px-2 py-1">Dar prueba</button>
+            <button className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50">Dar prueba</button>
           </form>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <form action={issueInvoiceAction.bind(null, business.id)}>
-            <button className="rounded-md bg-brand px-3 py-1.5 text-white hover:bg-brand-hover">Emitir factura del próximo mes</button>
+            <button className="rounded-full bg-brand px-4 py-1.5 text-white hover:bg-brand-hover font-medium shadow-sm">Emitir factura del próximo mes</button>
           </form>
           <form action={setSuspendedAction.bind(null, business.id, !business.billingSuspended)}>
             <button className="text-sm underline">{business.billingSuspended ? "Reactivar servicio" : "Suspender servicio"}</button>
@@ -201,8 +201,8 @@ export default async function AdminBusinessPage({
                 {inv.status === "pending" ? (
                   <span className="flex items-center gap-2">
                     <form action={markPaidAction.bind(null, business.id, inv.id)} className="flex items-center gap-1">
-                      <input name="reference" placeholder="N.º de transferencia" className="w-40 rounded-md border px-2 py-1 text-xs" />
-                      <button className="rounded-md border px-2 py-1 text-xs">Marcar pagada</button>
+                      <input name="reference" placeholder="N.º de transferencia" className="w-40 rounded-xl border px-2 py-1.5 text-xs" />
+                      <button className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50 text-xs">Marcar pagada</button>
                     </form>
                     <form action={voidInvoiceAction.bind(null, business.id, inv.id)}>
                       <button className="text-xs text-neutral-500 underline">Anular</button>
@@ -219,8 +219,8 @@ export default async function AdminBusinessPage({
         )}
       </section>
 
-      <section className="mb-8 rounded-md border p-4">
-        <h2 className="mb-2 font-medium">Equipo</h2>
+      <section className="card mb-8 p-5">
+        <h2 className="mb-2 font-semibold">Equipo</h2>
         <ul className="text-sm">
           {members.map((m) => (
             <li key={m.email} className="flex justify-between py-1">
@@ -232,8 +232,8 @@ export default async function AdminBusinessPage({
       </section>
 
       {links.length > 0 && (
-        <section className="rounded-md border p-4">
-          <h2 className="mb-2 font-medium">Historial de enlaces</h2>
+        <section className="card p-5">
+          <h2 className="mb-2 font-semibold">Historial de enlaces</h2>
           <ul className="text-sm">
             {links.map((l) => (
               <li key={l.id} className="flex justify-between py-1 text-neutral-500">

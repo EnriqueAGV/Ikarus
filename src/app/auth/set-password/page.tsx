@@ -13,7 +13,7 @@ const errors: Record<string, string> = {
   failed: "No pudimos guardar tu contraseña. Inténtalo de nuevo.",
 };
 
-const inputClass = "rounded-md border px-3 py-2";
+const inputClass = "rounded-xl border px-3 py-2";
 
 // Reached from the invitation email (via /auth/invite) or a password reset
 // email (via /auth/callback), both of which leave the user signed in.
@@ -29,7 +29,7 @@ export default async function SetPasswordPage({
   if (!data.user) redirect("/login?error=callback");
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
+    <main className="card animate-enter mx-auto my-auto flex w-[calc(100%-2rem)] max-w-sm flex-col gap-6 p-8">
       <Logo />
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Crea tu contraseña</h1>
@@ -50,7 +50,7 @@ export default async function SetPasswordPage({
         </label>
         <SubmitButton
           pendingText="Guardando…"
-          className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60"
+          className="rounded-full bg-brand px-4 py-2 text-white hover:bg-brand-hover disabled:opacity-60 font-medium shadow-sm"
         >
           Guardar y entrar
         </SubmitButton>

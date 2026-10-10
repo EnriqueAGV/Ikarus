@@ -40,7 +40,7 @@ export function SlotPicker({
   canNotify: boolean;
   submitLabel: string;
 }) {
-  const input = "rounded-md border px-2 py-1 text-sm";
+  const input = "rounded-xl border px-2 py-1.5 text-sm";
   const label = "flex flex-col gap-1 text-xs text-neutral-500";
   const showDoctor = doctors.length > 1;
 
@@ -79,18 +79,18 @@ export function SlotPicker({
           Fecha
           <input type="date" name="date" defaultValue={date} min={today} className={input} />
         </label>
-        <button className="rounded-md border px-3 py-1.5 text-sm">Ver horarios</button>
+        <button className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">Ver horarios</button>
       </form>
 
       <div className="flex items-center gap-2 text-sm">
         {date > today ? (
-          <Link href={href(shiftDate(date, -1))} className="rounded-md border px-2 py-1" aria-label="Día anterior">
+          <Link href={href(shiftDate(date, -1))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50" aria-label="Día anterior">
             ←
           </Link>
         ) : (
-          <span className="rounded-md border px-2 py-1 text-neutral-300">←</span>
+          <span className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50 text-neutral-300">←</span>
         )}
-        <Link href={href(shiftDate(date, 1))} className="rounded-md border px-2 py-1" aria-label="Día siguiente">
+        <Link href={href(shiftDate(date, 1))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50" aria-label="Día siguiente">
           →
         </Link>
         <span className="ml-2 font-medium capitalize">
@@ -99,7 +99,7 @@ export function SlotPicker({
       </div>
 
       {slots.length === 0 ? (
-        <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
+        <p className="card p-8 text-center text-sm text-neutral-500">
           No hay horarios libres este día. Prueba otro día{showDoctor ? " u otro doctor" : ""}.
         </p>
       ) : (
@@ -115,7 +115,7 @@ export function SlotPicker({
               <button
                 key={`${slot.startsAt.getTime()}`}
                 formAction={bookAction(slot)}
-                className="rounded-md border px-3 py-1.5 text-sm hover:border-brand hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                className="rounded-full border px-4 py-1.5 text-sm hover:border-brand hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white"
               >
                 {formatLocal(slot.startsAt, timezone, "HH:mm")}
                 {showDoctor && !doctorId && <span className="block text-xs text-neutral-500">{slot.practitionerName}</span>}

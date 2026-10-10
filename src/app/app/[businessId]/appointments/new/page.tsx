@@ -35,12 +35,12 @@ export default async function NewAppointmentPage({ params, searchParams }: PageP
             defaultValue={q}
             autoFocus
             placeholder="Buscar por nombre o teléfono"
-            className="w-full max-w-sm rounded-md border px-3 py-1.5 text-sm"
+            className="w-full max-w-sm rounded-xl border px-3 py-1.5 text-sm"
           />
-          <button className="rounded-md border px-3 py-1.5 text-sm">Buscar</button>
+          <button className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">Buscar</button>
         </form>
         {q && (
-          <ul className="divide-y rounded-md border">
+          <ul className="card divide-y overflow-hidden">
             {rows.slice(0, 20).map(({ client }) => (
               <li key={client.id}>
                 <Link
@@ -98,7 +98,7 @@ export default async function NewAppointmentPage({ params, searchParams }: PageP
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!serviceId ? (
-        <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
+        <p className="card p-8 text-center text-sm text-neutral-500">
           El consultorio no tiene servicios activos. Agrégalos en Ajustes.
         </p>
       ) : (

@@ -12,7 +12,7 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
   const showArchived = archived === "1";
   const rows = await listClients(business.id, query, { archived: showArchived });
   const error = typeof recordError === "string" ? settingsErrorLabel[recordError] ?? "Algo salió mal." : null;
-  const input = "rounded-md border px-2 py-1 text-sm";
+  const input = "rounded-xl border px-2 py-1.5 text-sm";
   const label = "flex flex-col gap-1 text-xs text-neutral-500";
 
   return (
@@ -22,10 +22,10 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
           name="q"
           defaultValue={query}
           placeholder="Buscar por nombre o teléfono"
-          className="w-full max-w-sm rounded-md border px-3 py-1.5 text-sm"
+          className="w-full max-w-sm rounded-xl border px-3 py-1.5 text-sm"
         />
         {showArchived && <input type="hidden" name="archived" value="1" />}
-        <button className="rounded-md border px-3 py-1.5 text-sm">Buscar</button>
+        <button className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">Buscar</button>
         <Link
           href={showArchived ? `/app/${business.id}/clients` : `/app/${business.id}/clients?archived=1`}
           className="self-center whitespace-nowrap text-sm text-neutral-500 hover:underline"
@@ -33,7 +33,7 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
           {showArchived ? "Ver activos" : "Ver archivados"}
         </Link>
       </form>
-      <details open={open === "1"} className="rounded-md border p-4">
+      <details open={open === "1"} className="card p-5">
         <summary className="cursor-pointer text-sm font-medium">Nuevo paciente</summary>
         <form action={createPatientAction.bind(null, business.id)} className="mt-3 grid gap-3 sm:grid-cols-2">
           {error && <p className="text-sm text-red-600 sm:col-span-2">{error}</p>}
@@ -62,16 +62,16 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
             asistente lo reconoce cuando ella escribe.
           </p>
           <div className="flex justify-end sm:col-span-2">
-            <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Registrar paciente</button>
+            <button className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">Registrar paciente</button>
           </div>
         </form>
       </details>
       {rows.length === 0 ? (
-        <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
+        <p className="card p-8 text-center text-sm text-neutral-500">
           {showArchived ? "No hay pacientes archivados." : query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp, o puedes registrarlos en Nuevo paciente."}
         </p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="card divide-y overflow-hidden">
           {rows.map(({ client, appointmentCount, lastAppointment }) => (
             <li key={client.id}>
               <Link
@@ -84,10 +84,10 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
                 </div>
                 <div className="flex items-center gap-3 text-sm text-neutral-500">
                   {client.mergedIntoId && (
-                    <span className="rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-900">Unido a otro expediente</span>
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs text-sky-900">Unido a otro expediente</span>
                   )}
                   {client.agentPaused && (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">
                       Esperando al equipo
                     </span>
                   )}

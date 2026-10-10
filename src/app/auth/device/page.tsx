@@ -16,7 +16,7 @@ const errors: Record<string, string> = {
   send: "No pudimos enviar el correo. Inténtalo de nuevo en un momento.",
 };
 
-const button = "rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60";
+const button = "rounded-full bg-brand px-4 py-2 text-white hover:bg-brand-hover disabled:opacity-60 font-medium shadow-sm";
 
 // The first sign-in on a new computer or phone: a code sent to the person's
 // email confirms the device, and it isn't asked again there.
@@ -31,7 +31,7 @@ export default async function DevicePage({ searchParams }: PageProps<"/auth/devi
   if (await isTrustedDevice(profile.id, (await cookies()).get(DEVICE_COOKIE)?.value)) redirect(next);
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
+    <main className="card animate-enter mx-auto my-auto flex w-[calc(100%-2rem)] max-w-sm flex-col gap-6 p-8">
       <Logo />
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold">Confirma este dispositivo</h1>
@@ -53,7 +53,7 @@ export default async function DevicePage({ searchParams }: PageProps<"/auth/devi
               inputMode="numeric"
               autoComplete="one-time-code"
               maxLength={11}
-              className="rounded-md border px-3 py-2 text-lg tracking-widest"
+              className="rounded-xl border px-3 py-2 text-lg tracking-widest"
             />
           </label>
           <SubmitButton pendingText="Verificando…" className={button}>

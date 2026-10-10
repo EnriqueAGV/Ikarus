@@ -14,7 +14,7 @@ const errors: Record<string, string> = {
   callback: "El enlace no es válido o ya expiró. Pide uno nuevo.",
 };
 
-const inputClass = "rounded-md border px-3 py-2";
+const inputClass = "rounded-xl border px-3 py-2";
 
 export default async function LoginPage({
   searchParams,
@@ -24,7 +24,7 @@ export default async function LoginPage({
   const next = typeof params.next === "string" ? params.next : "/";
 
   return (
-    <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6 px-4">
+    <main className="card animate-enter mx-auto my-auto flex w-[calc(100%-2rem)] max-w-sm flex-col gap-6 p-8">
       <Logo />
       <h1 className="text-2xl font-semibold">Entrar a tu cuenta</h1>
       <form action={signIn} className="flex flex-col gap-3">
@@ -39,7 +39,7 @@ export default async function LoginPage({
         </label>
         <SubmitButton
           pendingText="Entrando…"
-          className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover disabled:opacity-60"
+          className="rounded-full bg-brand px-4 py-2 text-white hover:bg-brand-hover disabled:opacity-60 font-medium shadow-sm"
         >
           Entrar
         </SubmitButton>

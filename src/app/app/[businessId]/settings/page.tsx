@@ -22,9 +22,9 @@ import {
   updateServiceAction,
 } from "../actions";
 
-const input = "rounded-md border px-2 py-1 text-sm";
-const button = "rounded-md border px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900";
-const primary = "rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover";
+const input = "rounded-xl border px-2 py-1.5 text-sm";
+const button = "rounded-full border px-4 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white";
+const primary = "rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm";
 const hhmm = (t: string | null) => t?.slice(0, 5) ?? "";
 // Monday first, as the week view shows it.
 const WEEK = [1, 2, 3, 4, 5, 6, 0];
@@ -55,20 +55,20 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
-      {error && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
-      {sp.saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Cambios guardados.</p>}
+      {error && <p className="notice notice-error text-sm">{error}</p>}
+      {sp.saved && <p className="notice notice-ok text-sm">Cambios guardados.</p>}
       {(services.filter((s) => s.active).length === 0 || rules.length === 0 || !anyActive) && (
-        <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+        <p className="notice notice-warn text-sm">
           El asistente solo puede agendar cuando hay al menos un doctor activo con horario de atención y un servicio activo.
         </p>
       )}
 
       <section id="doctors" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Doctores</h2>
+        <h2 className="text-lg font-semibold">Doctores</h2>
         <ul className="flex flex-col gap-2">
           {practitioners.map((p) => (
             <li key={p.id}>
-              <form action={updatePractitionerAction.bind(null, id, p.id)} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+              <form action={updatePractitionerAction.bind(null, id, p.id)} className="card flex flex-wrap items-end gap-2 p-4">
                 <PractitionerInputs displayName={p.displayName} specialty={p.specialty} jvpmNumber={p.jvpmNumber} />
                 <label className="flex items-center gap-1 pb-1.5 text-sm">
                   <input type="checkbox" name="active" defaultChecked={p.active} /> Activo
@@ -78,7 +78,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             </li>
           ))}
         </ul>
-        <form action={addPractitionerAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+        <form action={addPractitionerAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
           <PractitionerInputs displayName="" specialty={null} jvpmNumber={null} />
           <button className={primary}>Agregar doctor</button>
         </form>
@@ -88,11 +88,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
       </section>
 
       <section id="services" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Servicios</h2>
+        <h2 className="text-lg font-semibold">Servicios</h2>
         <ul className="flex flex-col gap-2">
           {services.map((s) => (
             <li key={s.id}>
-              <form action={updateServiceAction.bind(null, id, s.id)} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+              <form action={updateServiceAction.bind(null, id, s.id)} className="card flex flex-wrap items-end gap-2 p-4">
                 <Field label="Nombre">
                   <input name="name" defaultValue={s.name} required className={`${input} w-56`} />
                 </Field>
@@ -110,7 +110,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             </li>
           ))}
         </ul>
-        <form action={createServiceAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+        <form action={createServiceAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
           <Field label="Nuevo servicio">
             <input name="name" required placeholder="Consulta general" className={`${input} w-56`} />
           </Field>
@@ -125,27 +125,29 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
       </section>
 
       {doctor && practitioners.length > 1 && (
-        <nav className="flex flex-wrap items-center gap-1 text-sm" aria-label="Doctor">
-          <span className="mr-1 text-neutral-500">Horario de</span>
+        <nav className="flex flex-wrap items-center gap-2 text-sm" aria-label="Doctor">
+          <span className="text-neutral-500">Horario de</span>
+          <div className="flex flex-wrap gap-1 rounded-full bg-black/[0.05] p-1">
           {practitioners.map((p) => (
             <Link
               key={p.id}
               href={`/app/${id}/settings?doctor=${p.id}#hours`}
-              className={`rounded-md border px-3 py-1 ${p.id === doctor.id ? "bg-brand text-white" : ""} ${p.active ? "" : "opacity-60"}`}
+              className={`rounded-full px-3.5 py-1 ${p.id === doctor.id ? "bg-white font-medium text-foreground shadow-sm" : "text-neutral-600 hover:text-foreground"} ${p.active ? "" : "opacity-60"}`}
             >
               {p.displayName}
             </Link>
           ))}
+          </div>
         </nav>
       )}
 
       {doctor && (
       <section id="hours" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Horario de atención{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
+        <h2 className="text-lg font-semibold">Horario de atención{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
         <p className="text-sm text-neutral-500">
           Hora local ({business.timezone}). Usa el segundo horario para días con pausa, por ejemplo 9:00–14:00 y 16:00–19:00.
         </p>
-        <form action={saveHoursAction.bind(null, id, doctor.id)} className="flex flex-col gap-2 rounded-md border p-3">
+        <form action={saveHoursAction.bind(null, id, doctor.id)} className="card flex flex-col gap-2 p-4">
           {WEEK.map((d) => {
             const day = rules.filter((r) => r.weekday === d);
             return (
@@ -173,14 +175,14 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
 
       {doctor && (
       <section id="exceptions" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Días especiales{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
+        <h2 className="text-lg font-semibold">Días especiales{practitioners.length > 1 ? ` · ${doctor.displayName}` : ""}</h2>
         <p className="text-sm text-neutral-500">Días cerrados o con otro horario. Reemplazan el horario semanal ese día.</p>
         {exceptions.length > 0 && (
-          <ul className="divide-y rounded-md border text-sm">
+          <ul className="card divide-y text-sm overflow-hidden">
             {exceptions.map((e) => (
               <li key={e.id} className="flex items-center justify-between gap-2 px-3 py-2">
                 <span>
-                  <span className="capitalize">{formatLocal(new Date(`${e.date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM yyyy")}</span>
+                  <span className="inline-block first-letter:uppercase">{formatLocal(new Date(`${e.date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM yyyy")}</span>
                   {" · "}
                   {e.startTime ? `${hhmm(e.startTime)}–${hhmm(e.endTime)}` : "Cerrado"}
                   {e.note ? ` · ${e.note}` : ""}
@@ -192,7 +194,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             ))}
           </ul>
         )}
-        <form action={addExceptionAction.bind(null, id, doctor.id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+        <form action={addExceptionAction.bind(null, id, doctor.id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
           <Field label="Fecha">
             <input type="date" name="date" required className={input} />
           </Field>
@@ -213,13 +215,13 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
       )}
 
       <section id="intake" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Datos que pide el asistente</h2>
+        <h2 className="text-lg font-semibold">Datos que pide el asistente</h2>
         <p className="text-sm text-neutral-500">
           El nombre siempre se pide. El asistente no agenda hasta tener los datos obligatorios.
         </p>
         <ul className="flex flex-col gap-2">
           {fields.map((f, i) => (
-            <li key={f.id} className="flex flex-wrap items-end gap-2 rounded-md border p-3">
+            <li key={f.id} className="card flex flex-wrap items-end gap-2 p-4">
               <form action={updateIntakeAction.bind(null, id, f.id)} className="flex flex-wrap items-end gap-2">
                 <IntakeInputs label={f.label} type={f.type} options={f.options ?? []} required={f.required} />
                 <button className={button}>Guardar</button>
@@ -238,15 +240,15 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             </li>
           ))}
         </ul>
-        <form action={createIntakeAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+        <form action={createIntakeAction.bind(null, id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
           <IntakeInputs label="" type="text" options={[]} required />
           <button className={primary}>Agregar</button>
         </form>
       </section>
 
       <section id="general" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Recordatorios y asistente</h2>
-        <form action={saveGeneralAction.bind(null, id)} className="flex flex-col gap-3 rounded-md border p-3">
+        <h2 className="text-lg font-semibold">Recordatorios y asistente</h2>
+        <form action={saveGeneralAction.bind(null, id)} className="card flex flex-col gap-3 p-4">
           <Field label="Enviar el recordatorio cuántas horas antes de la cita">
             <input
               name="reminderLeadHours"
@@ -336,12 +338,12 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
       </section>
 
       <section id="plan" className="flex flex-col gap-3">
-        <h2 className="text-lg font-medium">Plan y pagos</h2>
-        <div className="flex flex-col gap-3 rounded-md border p-3 text-sm">
+        <h2 className="text-lg font-semibold">Plan y pagos</h2>
+        <div className="card flex flex-col gap-3 p-4 text-sm">
           <p className="font-medium">{standingLabel(billing, business.timezone)}</p>
           {business.monthlyPriceCents && <p>Plan mensual: {formatMoney(business.monthlyPriceCents)}.</p>}
           {pendingInvoices.map((inv) => (
-            <div key={inv.id} className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:bg-amber-950">
+            <div key={inv.id} className="notice notice-warn">
               <p className="font-medium">
                 Factura {transferReference(inv)}: {formatMoney(inv.amountCents, inv.currency)}, del {inv.periodStart} al {inv.periodEnd}
               </p>

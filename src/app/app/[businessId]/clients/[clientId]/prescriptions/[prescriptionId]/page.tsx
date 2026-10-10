@@ -27,8 +27,8 @@ export default async function PrescriptionPage({ params, searchParams }: PagePro
         </Link>
         <PrintButton />
       </div>
-      {sp.issued && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 print:hidden">Receta emitida.</p>}
-      <article className="flex flex-col gap-5 rounded-md border bg-white p-6 text-black print:border-0 print:p-0">
+      {sp.issued && <p className="notice notice-ok text-sm print:hidden">Receta emitida.</p>}
+      <article className="card flex flex-col gap-5 bg-white p-8 text-black print:border-0 print:p-0">
         <header className="flex justify-between gap-4 border-b pb-3">
           <div>
             <p className="text-lg font-semibold">{practitioner.displayName}</p>

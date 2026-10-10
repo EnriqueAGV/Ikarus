@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { LogoMark } from "@/components/logo";
 import { SignOutButton } from "@/components/signout-button";
 import { NavLinks } from "@/components/dashboard/nav-links";
@@ -7,6 +8,8 @@ import { standingNotice } from "@/lib/billing-labels";
 import { waitingCount } from "@/lib/dashboard/inbox";
 
 export default async function BusinessLayout({ children, params }: LayoutProps<"/app/[businessId]">) {
+  // Request-time only: the session, trusted devices and the plan's standing all depend on now.
+  await connection();
   const { businessId } = await params;
   const membership = await requireBusinessAccess(businessId);
   const { business } = membership;
@@ -27,34 +30,28 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
   ];
 
   return (
-    <div className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-      <header className="mb-6 flex flex-col gap-3 border-b pb-4 print:hidden">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <LogoMark className="h-9 w-9 shrink-0" />
-            <div>
-              <h1 className="text-xl font-semibold">{business.name}</h1>
-              <p className="text-xs text-neutral-500">
-                {business.displayPhone ?? "WhatsApp sin conectar"} · {business.timezone}
-              </p>
+    <div className="flex flex-1 flex-col">
+      <header className="sticky top-0 z-30 border-b border-black/[0.06] bg-background/75 backdrop-blur-xl backdrop-saturate-150 print:hidden">
+        <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 pt-4 pb-3 sm:px-6">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3">
+              <LogoMark className="h-9 w-9 shrink-0" />
+              <div className="leading-tight">
+                <h1 className="text-[17px] font-semibold">{business.name}</h1>
+                <p className="text-xs text-muted">{business.displayPhone ?? "WhatsApp sin conectar"}</p>
+              </div>
             </div>
+            <SignOutButton />
           </div>
-          <SignOutButton />
+          <NavLinks links={links} />
         </div>
-        <NavLinks links={links} />
       </header>
-      {notice && (
-        <p
-          className={`mb-4 rounded-md border p-3 text-sm print:hidden ${
-            notice.tone === "stop"
-              ? "border-red-300 bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-200"
-              : "border-amber-300 bg-amber-50 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
-          }`}
-        >
-          {notice.text}
-        </p>
-      )}
-      {children}
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
+        {notice && (
+          <p className={`notice mb-6 print:hidden ${notice.tone === "stop" ? "notice-error" : "notice-warn"}`}>{notice.text}</p>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

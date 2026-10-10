@@ -18,8 +18,9 @@ export async function pausedConversations(businessId: string): Promise<InboxRow[
       id: schema.clients.id,
       name: schema.clients.name,
       waPhone: schema.clients.waPhone,
-      lastInboundAt: sql<Date | null>`(select max(${schema.messages.createdAt}) from ${schema.messages} where ${schema.messages.clientId} = ${schema.clients.id} and ${schema.messages.direction} = 'inbound')`.mapWith(
-        (v) => (v ? new Date(v) : null),
+      // As epoch milliseconds: postgres-js returns a bare timestamp string here.
+      lastInboundAt: sql<number | null>`(select extract(epoch from max(m.created_at)) * 1000 from messages m where m.client_id = "clients"."id" and m.direction = 'inbound')`.mapWith(
+        (v) => (v === null ? null : new Date(Number(v))),
       ),
     })
     .from(schema.clients)

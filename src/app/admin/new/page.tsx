@@ -36,7 +36,7 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         <Field label="Nombre del consultorio" name="name" required />
         <label className="flex flex-col gap-1 text-sm">
           Zona horaria
-          <select name="timezone" className="rounded-md border px-3 py-2" defaultValue="America/El_Salvador">
+          <select name="timezone" className="rounded-xl border px-3 py-2" defaultValue="America/El_Salvador">
             {TIMEZONES.map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
@@ -50,14 +50,14 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         <Field label="N.º JVPM (opcional)" name="jvpmNumber" />
         <label className="flex flex-col gap-1 text-sm">
           Días de prueba gratis
-          <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-28 rounded-md border px-3 py-2" />
+          <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-28 rounded-xl border px-3 py-2" />
           <span className="text-xs text-neutral-500">0 para cobrar desde el inicio.</span>
         </label>
         <p className="text-sm text-neutral-500">
           Se crea la cuenta del doctor, su agenda y un enlace para conectar el WhatsApp del consultorio. El doctor recibe un correo para crear su contraseña y entrar a su panel.
         </p>
         {message && <p className="text-sm text-red-600">{message}</p>}
-        <button className="rounded-md bg-brand px-3 py-2 text-white hover:bg-brand-hover">
+        <button className="rounded-full bg-brand px-4 py-2 text-white hover:bg-brand-hover font-medium shadow-sm">
           Crear consultorio y enlace
         </button>
       </form>
@@ -73,7 +73,7 @@ function Field(props: { label: string; name: string; type?: string; required?: b
         name={props.name}
         type={props.type ?? "text"}
         required={props.required}
-        className="rounded-md border px-3 py-2"
+        className="rounded-xl border px-3 py-2"
       />
     </label>
   );
