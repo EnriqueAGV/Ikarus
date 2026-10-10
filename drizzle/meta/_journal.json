@@ -1,6 +1,6 @@
 {
   "version": "7",
-  "dialect": "postgresql",
+  "dialect": "postgr0016_agent_security",
   "entries": [
     {
       "idx": 0,
@@ -112,6 +112,13 @@
       "version": "7",
       "when": 1791658093289,
       "tag": "0015_dashboard_realtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791670569409,
+      "tag": "0016_agent_security",
       "breakpoints": true
     }
   ]

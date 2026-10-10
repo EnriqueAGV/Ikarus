@@ -130,6 +130,7 @@ export async function updateDemographics(actor: Actor, clientId: string, input: 
     emergencyContactName: blank(input.emergencyContactName),
     emergencyContactPhone: blank(input.emergencyContactPhone),
     preferredPractitionerId: input.preferredPractitionerId,
+    identityReviewedAt: now,
   };
   await db.transaction(async (tx) => {
     const patient = await lockPatient(tx, actor.business.id, clientId);
@@ -203,7 +204,7 @@ export async function createPatient(
     const holder = phone ? await holderOfNumber(actor.business.id, phone, tx) : null;
     const [patient] = await tx
       .insert(schema.clients)
-      .values({ ...values, businessId: actor.business.id, waPhone: phone, holderId: holder?.id ?? null })
+      .values({ ...values, businessId: actor.business.id, waPhone: phone, holderId: holder?.id ?? null, identityReviewedAt: now })
       .returning({ id: schema.clients.id });
     await tx.insert(schema.accessLog).values({
       businessId: actor.business.id,
@@ -288,12 +289,26 @@ async function changePhoneInTransaction(tx: Tx, actor: Actor, clientId: string, 
   if (dependents.length) {
     if (!phone) throw new PatientError("has_dependents");
     if (other) throw new PatientError("phone_in_use");
-    await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.id, patient.id));
+    await tx.update(schema.clients).set({ waPhone: phone, ...UNVERIFIED }).where(eq(schema.clients.id, patient.id));
     await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.holderId, patient.id));
   } else {
-    await tx.update(schema.clients).set({ waPhone: phone, holderId: other?.id ?? null }).where(eq(schema.clients.id, patient.id));
+    await tx.update(schema.clients).set({ waPhone: phone, holderId: other?.id ?? null, ...UNVERIFIED }).where(eq(schema.clients.id, patient.id));
   }
   return true;
+}
+
+// A number typed in by staff is proved again before the assistant shows the
+// record to whoever writes from it.
+const UNVERIFIED = { waVerifiedAt: null, waVerifyFailures: 0 };
+
+// Staff confirmed, e.g. by phone, that the WhatsApp number is the patient's.
+export async function markWhatsappVerified(actor: Actor, clientId: string, now = new Date()) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  await db.transaction(async tx => {
+    const patient = await lockPatient(tx, actor.business.id, clientId);
+    await tx.update(schema.clients).set({ waVerifiedAt: now, waVerifyFailures: 0 }).where(eq(schema.clients.id, patient.holderId ?? patient.id));
+    await tx.insert(schema.accessLog).values({ businessId: actor.business.id, clientId, userId: actor.profile.id, practitionerId: actor.practitionerId, action: "edit_chart" });
+  });
 }
 
 export async function changePhone(actor: Actor, clientId: string, raw: string | null) {
@@ -460,9 +475,10 @@ export async function reviewIntake(actor: Actor, clientId: string, key: string, 
     const source = intakeReviewFields(patient.data, fields, patient).find(f => f.key === key);
     if (!source) throw new PatientError("unknown_intake");
     if (source.received !== expectedReceived) throw new PatientError("record_changed");
-    const canonical = decision === "record" ? source.canonical : source.target === "dui" ? normalizeDui(source.received) : birthDate(source.received, now);
+    const canonical = decision === "record" ? source.canonical : source.target === "dui" ? normalizeDui(source.received) : source.target === "name" ? blank(source.received) : birthDate(source.received, now);
     await tx.update(schema.clients).set({
       ...(decision === "received" ? { [source.target]: canonical } : {}),
+      ...(source.target !== "dateOfBirth" ? { identityReviewedAt: now } : {}),
       intakeReview: { ...patient.intakeReview, [key]: { received: source.received, canonical, reviewedAt: now.toISOString() } },
     }).where(eq(schema.clients.id, clientId));
     await tx.insert(schema.accessLog).values({ businessId: actor.business.id, clientId, userId: actor.profile.id, practitionerId: actor.practitionerId, action: "edit_chart" });

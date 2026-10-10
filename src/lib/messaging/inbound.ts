@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { holderOfNumber } from "@/lib/household";
+import { NAME_MAX, oneLine } from "@/lib/agent/sanitize";
 
 // Shape of Kapso's whatsapp.message.received payload, limited to what we read.
 export type KapsoInbound = {
@@ -50,7 +51,8 @@ function senderPhone(p: KapsoInbound) {
 export type StoredInbound = { businessId: string; clientId: string; messageId: string };
 
 // Saves one inbound message and its client. Returns null when the number is
-// not one of ours or the message is an old one replayed by a history sync.
+// not one of ours, or the message is an old one replayed by a history sync
+// or a delivery already stored.
 export async function storeInbound(p: KapsoInbound): Promise<StoredInbound | null> {
   if (p.message.kapso?.origin === "history_sync") return null;
   const phone = senderPhone(p);
@@ -62,12 +64,23 @@ export async function storeInbound(p: KapsoInbound): Promise<StoredInbound | nul
     .where(eq(schema.businesses.phoneNumberId, p.phone_number_id));
   if (!business) return null;
 
+  // A replayed delivery under a new idempotency key is stored only once.
+  const [seen] = await db
+    .select({ id: schema.messages.id })
+    .from(schema.messages)
+    .where(and(eq(schema.messages.businessId, business.id), eq(schema.messages.kapsoMessageId, p.message.id), eq(schema.messages.direction, "inbound")))
+    .limit(1);
+  if (seen) return null;
+
+  // A number seen for the first time is verified by writing in: the record
+  // is created by its owner.
   await db
     .insert(schema.clients)
     .values({
       businessId: business.id,
       waPhone: phone,
-      name: p.conversation?.contact_name || null,
+      name: oneLine(p.conversation?.contact_name ?? "", NAME_MAX) || null,
+      waVerifiedAt: new Date(),
     })
     .onConflictDoNothing();
   // The conversation belongs to the number's holder, whoever else shares it.

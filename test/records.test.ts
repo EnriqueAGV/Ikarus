@@ -85,6 +85,17 @@ describe("changing a patient's WhatsApp number", () => {
   });
 });
 
+describe("verifying a WhatsApp number", () => {
+  it("starts a staff-typed number unverified, again after a change, until staff confirm it", async () => {
+    const id = await patients.createPatient(assistant, { name: "Rosa Díaz", phone: "7000 0020", dateOfBirth: null, sex: null });
+    expect(await reload(id)).toMatchObject({ waVerifiedAt: null, identityReviewedAt: expect.any(Date) });
+    await patients.markWhatsappVerified(assistant, id);
+    expect((await reload(id)).waVerifiedAt).toBeInstanceOf(Date);
+    await patients.changePhone(assistant, id, "7000 0021");
+    expect(await reload(id)).toMatchObject({ waPhone: "50370000021", waVerifiedAt: null, waVerifyFailures: 0 });
+  });
+});
+
 describe("merging duplicate patients", () => {
   it("brings a WhatsApp duplicate's number, conversation and appointments to the hand-made record", async () => {
     const byHand = await patient({ name: "Ana López", dateOfBirth: "1990-05-04", allergies: "Penicilina" });
@@ -402,5 +413,12 @@ describe("human work and patient directory", () => {
     expect((await reload(p.id)).data.numero_dui).toBe("012345678");
     await expect(patients.reviewIntake(assistant, p.id, "fecha_nacimiento", "1999-01-01", "received")).rejects.toThrow("record_changed");
     expect((await patients.recentAccess(business.id, p.id)).filter(a => a.action === "edit_chart")).toHaveLength(2);
+  });
+
+  it("reviews a name or DUI the assistant received for a confirmed record", async () => {
+    const p = await patient({ name: "Rosa Díaz", dui: "01234567-8", identityReviewedAt: new Date(), data: { nombre_whatsapp: "Rosa María Díaz", dui_whatsapp: "09876543-2" } });
+    await patients.reviewIntake(assistant, p.id, "nombre_whatsapp", "Rosa María Díaz", "received");
+    await patients.reviewIntake(assistant, p.id, "dui_whatsapp", "09876543-2", "record");
+    expect(await reload(p.id)).toMatchObject({ name: "Rosa María Díaz", dui: "01234567-8" });
   });
 });

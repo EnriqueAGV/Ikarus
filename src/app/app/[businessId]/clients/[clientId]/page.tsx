@@ -22,14 +22,14 @@ import { duplicateCandidates, logChartView, recentAccess, recordIds } from "@/li
 import { listPrescriptions } from "@/lib/dashboard/prescriptions";
 import { listIntakeFields } from "@/lib/dashboard/settings";
 import { MergeCandidate } from "@/components/dashboard/merge-candidate";
-import { intakeReviewFields } from "@/lib/dashboard/intake-review";
+import { intakeReviewFields, RECEIVED_IDENTITY_LABELS } from "@/lib/dashboard/intake-review";
 import { WorkflowButton } from "@/components/dashboard/workflow-button";
 import { Conversation } from "@/components/dashboard/conversation";
 import { RecordForm } from "@/components/dashboard/record-form";
 import { SubmitButton } from "@/components/submit-button";
 import { replyEligibility } from "@/lib/messaging/eligibility";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
-import { editPatientAction, editClinicalAction, replyAction, olderMessagesAction, resolveConversationAction, reviewedArchiveAction, reviewIntakeAction } from "../../workflow-actions";
+import { editPatientAction, editClinicalAction, replyAction, olderMessagesAction, resolveConversationAction, reviewedArchiveAction, reviewIntakeAction, verifyWhatsappAction } from "../../workflow-actions";
 import { ConfirmButton } from "@/components/confirm-button";
 import {
   restorePatientAction,
@@ -113,7 +113,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
     ...fields.map((f) => ({ label: f.label, value: client.data[f.key] })),
     ...Object.entries(client.data)
       .filter(([k]) => !known.has(k))
-      .map(([k, v]) => ({ label: k, value: v })),
+      .map(([k, v]) => ({ label: RECEIVED_IDENTITY_LABELS[k] ?? k, value: v })),
   ];
 
   return (
@@ -176,7 +176,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         <h3 className="mb-5 font-semibold">Resumen del paciente</h3>
         <dl className="grid gap-5 sm:grid-cols-3">
           <div><dt className="text-sm text-muted">Fecha de nacimiento</dt><dd className="mt-1 font-medium">{client.dateOfBirth ? displayDate(client.dateOfBirth) : "Sin registrar"}</dd></div>
-          <div><dt className="text-sm text-muted">WhatsApp</dt><dd className="mt-1 font-medium">{formatPhone(conversation.waPhone)}</dd>{others.length > 0 && <dd className="mt-1 text-xs text-muted">Contacto compartido · recibe {conversation.name ?? "el titular del número"}</dd>}</div>
+          <div><dt className="text-sm text-muted">WhatsApp</dt><dd className="mt-1 font-medium">{formatPhone(conversation.waPhone)}</dd>{conversation.waPhone && !conversation.waVerifiedAt && <dd className="mt-1 text-xs text-amber-900">Sin verificar: el asistente no muestra datos del expediente hasta que quien escribe confirme una fecha de nacimiento o DUI.{editable && <form action={verifyWhatsappAction.bind(null, business.id, client.id)} className="mt-1"><SubmitButton pendingText="Guardando…" className="btn-secondary">Marcar como verificado</SubmitButton></form>}</dd>}{others.length > 0 && <dd className="mt-1 text-xs text-muted">Contacto compartido · recibe {conversation.name ?? "el titular del número"}</dd>}</div>
           <div><dt className="text-sm text-muted">Atención del equipo</dt><dd className="mt-1 font-medium">{conversation.attentionStatus === "needs_reply" ? "Pendiente de respuesta" : conversation.attentionStatus === "follow_up" ? "En seguimiento" : "Sin pendientes"}</dd><dd className="mt-1 text-xs text-muted">{conversation.agentPaused ? "Asistente en pausa" : "Asistente activo"}</dd></div>
         </dl>
         {clinical && <div className="mt-5 grid gap-4 border-t pt-4 sm:grid-cols-2"><div><p className="text-sm text-muted">Alergias registradas</p><p className="mt-1 whitespace-pre-wrap text-sm">{client.allergies || "Sin información registrada"}</p></div><div><p className="text-sm text-muted">Enfermedades crónicas registradas</p><p className="mt-1 whitespace-pre-wrap text-sm">{client.chronicConditions || "Sin información registrada"}</p></div></div>}

@@ -1,6 +1,6 @@
 import { openAttention } from "@/lib/messaging/attention";
 import { normalizeChatDates, normalizeChatTimes } from "@/lib/dates";
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gt } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
 import { listPractitioners } from "@/lib/booking/practitioners";
@@ -12,7 +12,9 @@ import { serviceRunning } from "@/lib/billing";
 import { ensureConsent } from "./consent";
 import { EMERGENCY_REPLY, isEmergency } from "./emergency";
 import { staticSystemPrompt, turnContext } from "./prompt";
+import { checkReply } from "./guard";
 import { chatClient, type ChatClient, type ChatMessage } from "./llm";
+import { DuiVault } from "./sanitize";
 import { CHAT_TOOLS, hasLocation, runTool, type ToolContext } from "./tools";
 
 const HISTORY_LIMIT = 30;
@@ -21,12 +23,16 @@ const FALLBACK_REPLY =
   "Gracias por su mensaje. En un momento alguien del consultorio le responde.";
 // One emergency reply covers a burst of messages about the same situation.
 const EMERGENCY_REPEAT_MS = 30 * 60_000;
+// Far more than a real booking conversation needs in an hour. Past it, the
+// number is flooding the assistant (and the LLM bill) and the team takes over.
+const MAX_OUTBOUND_PER_HOUR = 30;
 
 export type AgentRunResult =
   | { status: "replied"; reply: string }
+  | { status: "blocked"; reason: string }
   | { status: "emergency"; replied: boolean }
   | { status: "consent_requested" }
-  | { status: "skipped"; reason: "not_found" | "paused" | "already_answered" | "service_stopped" };
+  | { status: "skipped"; reason: "not_found" | "paused" | "already_answered" | "service_stopped" | "rate_limited" };
 
 // Answers the client's latest messages. Runs inside an Inngest function that
 // allows one run per client at a time, so history is read and written in order.
@@ -35,6 +41,8 @@ export async function runAgent(input: {
   clientId: string;
   now?: Date;
   llm?: ChatClient;
+  // The reply check; the same endpoint unless a test passes another.
+  guard?: ChatClient;
 }): Promise<AgentRunResult> {
   if (!env.LLM_MODEL) throw new Error("LLM_MODEL is not set");
   const now = input.now ?? new Date();
@@ -54,6 +62,10 @@ export async function runAgent(input: {
   if (!serviceRunning(business, now)) {
     await apologizeAndHandOff(business.id, client.id);
     return { status: "skipped", reason: "service_stopped" };
+  }
+  if (await floodingSince(client.id, new Date(now.getTime() - 3_600_000))) {
+    await apologizeAndHandOff(business.id, client.id, "Demasiados mensajes en una hora: el asistente se pausó");
+    return { status: "skipped", reason: "rate_limited" };
   }
   // Nothing reaches the LLM until the patient accepts the privacy notice.
   const consent = await ensureConsent(business, client);
@@ -75,7 +87,9 @@ export async function runAgent(input: {
   const household = await loadHousehold(business.id, client.id);
   const upcoming = await upcomingAppointments(business.id, household.map((p) => p.id), now);
   const practitioners = await listPractitioners(business.id, { activeOnly: true });
-  const ctx: ToolContext = { business, client, household, fields, now };
+  const verified = client.waVerifiedAt !== null;
+  const duis = new DuiVault();
+  const ctx: ToolContext = { business, client, household, fields, now, verified, duis };
 
   // The stable instructions come first so endpoints with prompt caching can reuse them.
   const system = [
@@ -83,6 +97,7 @@ export async function runAgent(input: {
     turnContext({
       business,
       client,
+      verified,
       patients: household.map((p) => ({ patient: p, missing: missingIntake(p, fields) })),
       upcoming: upcoming.map((u) => ({
         id: u.appointment.id,
@@ -96,7 +111,7 @@ export async function runAgent(input: {
     }),
   ].join("\n\n");
 
-  const messages: ChatMessage[] = [{ role: "system", content: system }, ...toConversation(history)];
+  const messages: ChatMessage[] = [{ role: "system", content: system }, ...toConversation(history, duis)];
   const llm = input.llm ?? chatClient();
   let reply: string | null = null;
   const typing = typingIndicator(business.phoneNumberId, history.at(-1)!.kapsoMessageId);
@@ -120,7 +135,20 @@ export async function runAgent(input: {
     }
   }
 
-  const text = normalizeChatTimes(normalizeChatDates(reply?.trim() || FALLBACK_REPLY));
+  let text = normalizeChatTimes(normalizeChatDates(reply?.trim() || FALLBACK_REPLY));
+  // The model's own words are checked before they go out; a failed check
+  // sends the holding reply and the conversation goes to the team.
+  let blocked: string | null = null;
+  if (text !== FALLBACK_REPLY) {
+    const verdict = await checkReply(input.guard ?? llm, text);
+    if (!verdict.allowed) {
+      blocked = verdict.reason;
+      console.warn("reply blocked", { businessId: business.id, clientId: client.id, reason: verdict.reason });
+      await openAttention(business.id, client.id, `Respuesta del asistente retenida: ${verdict.reason}`, false, now);
+      text = FALLBACK_REPLY;
+      ctx.sendLocation = false;
+    }
+  }
   const kapsoMessageId = await sendText(business.phoneNumberId, client.waPhone, text);
   await db.insert(schema.messages).values({
     businessId: business.id,
@@ -131,6 +159,7 @@ export async function runAgent(input: {
     body: text,
   });
   if (ctx.sendLocation) await sendClinicLocation(business, client).catch((err) => console.error("location pin failed", err));
+  if (blocked) return { status: "blocked", reason: blocked };
   return { status: "replied", reply: text };
 }
 
@@ -156,11 +185,11 @@ async function sendClinicLocation(business: Business, client: Client) {
 
 // When the agent can't answer at all: the holding reply, if the patient's
 // last message is still unanswered, and the conversation goes to the team.
-export async function apologizeAndHandOff(businessId: string, clientId: string) {
+export async function apologizeAndHandOff(businessId: string, clientId: string, reason = "El asistente necesita ayuda del equipo") {
   const [business] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, businessId));
   const client = await reloadClient(businessId, clientId);
   if (!business?.phoneNumberId || !client?.waPhone) return;
-  await openAttention(business.id, client.id, "El asistente necesita ayuda del equipo");
+  await openAttention(business.id, client.id, reason);
   const [last] = await db
     .select({ direction: schema.messages.direction })
     .from(schema.messages)
@@ -227,15 +256,24 @@ function isEmergencyReply(m: StoredMessage) {
   return typeof m.payload === "object" && m.payload !== null && "emergency" in m.payload;
 }
 
-// Stored WhatsApp history as chat turns, starting at the client's first message.
-export function toConversation(history: StoredMessage[]): ChatMessage[] {
+async function floodingSince(clientId: string, since: Date) {
+  const [{ n }] = await db
+    .select({ n: count() })
+    .from(schema.messages)
+    .where(and(eq(schema.messages.clientId, clientId), eq(schema.messages.direction, "outbound"), gt(schema.messages.createdAt, since)));
+  return n >= MAX_OUTBOUND_PER_HOUR;
+}
+
+// Stored WhatsApp history as chat turns, starting at the client's first
+// message. DUIs are replaced by tokens (see DuiVault).
+export function toConversation(history: StoredMessage[], duis = new DuiVault()): ChatMessage[] {
   const firstInbound = history.findIndex((m) => m.direction === "inbound");
   return history
     .slice(Math.max(firstInbound, 0))
     .filter((m) => m.body?.trim())
     .map((m) => ({
       role: m.direction === "inbound" ? ("user" as const) : ("assistant" as const),
-      content: sentByStaff(m) ? `[Escrito por el equipo del consultorio, no por ti]\n${m.body}` : m.body!,
+      content: duis.mask(sentByStaff(m) ? `[Escrito por el equipo del consultorio, no por ti]\n${m.body}` : m.body!),
     }));
 }
 
@@ -251,8 +289,9 @@ async function callTool(name: string, rawArgs: string, ctx: ToolContext) {
   } catch {
     return { result: "Arguments were not valid JSON. Call the tool again.", isError: true };
   }
-  return runTool(name, args, ctx).catch((err) => ({
-    result: `Tool failed: ${err instanceof Error ? err.message : String(err)}`,
-    isError: true,
-  }));
+  // The error itself stays in the logs: it can name tables or values.
+  return runTool(name, args, ctx).catch((err) => {
+    console.error("agent tool failed", { tool: name, error: err });
+    return { result: "The tool failed. Apologize and call handoff_to_business.", isError: true };
+  });
 }

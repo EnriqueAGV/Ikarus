@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { chatClient, LlmError } from "@/lib/agent/llm";
+import { chatClient, LlmError, providerPreferences } from "@/lib/agent/llm";
 import { startFakeKapso } from "./fake-kapso";
 
 const server = await startFakeKapso({
@@ -29,13 +29,26 @@ afterAll(() => server.close());
 describe("OpenAI-compatible client", () => {
   it("posts to <base>/chat/completions and returns the first choice", async () => {
     const llm = chatClient(`${server.url}/v1/`, "sk-test");
-    const res = await llm.complete({ model: "m", messages: [{ role: "user", content: "hola" }], tools: [] });
+    const tool = { type: "function" as const, function: { name: "list_services", description: "", parameters: {} } };
+    const res = await llm.complete({ model: "m", messages: [{ role: "user", content: "hola" }], tools: [tool] });
     expect(res.finishReason).toBe("tool_calls");
     expect(res.message.tool_calls?.[0].function.name).toBe("list_services");
     expect(server.calls[0]).toMatchObject({
       path: "/v1/chat/completions",
-      body: { model: "m", tool_choice: "auto", messages: [{ role: "user", content: "hola" }] },
+      body: { model: "m", tool_choice: "auto", tools: [tool], messages: [{ role: "user", content: "hola" }] },
     });
+
+    // Without tools (the reply check) neither tools nor tool_choice is sent.
+    await llm.complete({ model: "m", messages: [{ role: "user", content: "hola" }], tools: [] });
+    expect(server.calls[1].body).not.toHaveProperty("tools");
+    expect(server.calls[1].body).not.toHaveProperty("tool_choice");
+  });
+
+  it("asks OpenRouter for zero-retention providers only", () => {
+    expect(providerPreferences("https://openrouter.ai/api/v1/chat/completions")).toEqual({
+      provider: { sort: "latency", data_collection: "deny", zdr: true },
+    });
+    expect(providerPreferences("https://api.openai.com/v1/chat/completions")).toEqual({});
   });
 
   it("cuts off a call that hangs and tries again", async () => {
