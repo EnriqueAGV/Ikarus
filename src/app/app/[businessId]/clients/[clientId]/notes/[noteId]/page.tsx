@@ -35,7 +35,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
       </Link>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">
+          <h2 className="text-2xl font-semibold tracking-tight">
             {note.status === "signed" ? `Nota ${note.number}` : "Nota en borrador"}
           </h2>
           <p className="text-sm text-neutral-500">
@@ -44,13 +44,13 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
           </p>
         </div>
         {note.status === "signed" && (
-          <Link href={`${back}/notes/${note.id}/print`} className="rounded-md border px-3 py-1.5 text-sm">
+          <Link href={`${back}/notes/${note.id}/print`} className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">
             Imprimir o PDF
           </Link>
         )}
       </header>
-      {error && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
-      {sp.signed && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">Nota firmada.</p>}
+      {error && <p className="notice notice-error text-sm">{error}</p>}
+      {sp.signed && <p className="notice notice-ok text-sm">Nota firmada.</p>}
 
       {note.status === "draft" && mine ? (
         <>
@@ -82,7 +82,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
       ) : (
         <>
           {note.status === "draft" && (
-            <p className="rounded-md border p-3 text-sm text-neutral-600 dark:text-neutral-300">
+            <p className="card p-4 text-sm text-neutral-600 dark:text-neutral-300">
               Borrador de {practitioner.displayName}. Solo ese doctor puede editarlo y firmarlo.
             </p>
           )}
@@ -97,8 +97,8 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
       )}
 
       {note.status === "signed" && (
-        <section id="adendas" className="flex flex-col gap-3 rounded-md border p-4">
-          <h3 className="font-medium">Adendas</h3>
+        <section id="adendas" className="card flex flex-col gap-3 p-5">
+          <h3 className="font-semibold">Adendas</h3>
           {addenda.length === 0 && <p className="text-sm text-neutral-500">Sin adendas.</p>}
           <ol className="flex flex-col gap-3">
             {addenda.map((a) => (
@@ -112,9 +112,9 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
           </ol>
           {can(membership, "notes.write") && (
             <form action={addAddendumAction.bind(null, business.id, client.id, note.id)} className="flex flex-col gap-2">
-              <textarea name="body" rows={3} required placeholder="Corrección o información nueva, con fecha y tu nombre" className="rounded-md border px-2 py-1 text-sm" />
+              <textarea name="body" rows={3} required placeholder="Corrección o información nueva, con fecha y tu nombre" className="rounded-xl border px-2 py-1.5 text-sm" />
               <div className="flex justify-end">
-                <SubmitButton pendingText="Agregando…" className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover disabled:opacity-60">
+                <SubmitButton pendingText="Agregando…" className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover disabled:opacity-60 font-medium shadow-sm">
                   Agregar adenda
                 </SubmitButton>
               </div>

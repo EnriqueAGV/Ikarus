@@ -25,14 +25,14 @@ export default function InvitePage() {
   }, []);
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 px-4 text-center">
+    <main className="card animate-enter mx-auto my-auto flex w-[calc(100%-2rem)] max-w-md flex-col gap-3 p-8 text-center">
       {failed ? (
         <>
           <h1 className="text-2xl font-semibold">El enlace ya no es válido</h1>
           <p className="text-sm text-neutral-500">
             Puede que haya expirado o que ya lo hayas usado. Pide un enlace nuevo para crear tu contraseña.
           </p>
-          <a href="/login/forgot" className="mx-auto rounded-md bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover">
+          <a href="/login/forgot" className="mx-auto rounded-full bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">
             Pedir un enlace nuevo
           </a>
         </>

@@ -64,7 +64,7 @@ export default async function RescheduleAppointmentPage({
           </Link>{" "}
           · {row.serviceName}
           {showDoctor && ` · ${row.practitionerName}`} ·{" "}
-          <span className="capitalize">{formatLocal(a.startsAt, tz, "EEEE d 'de' MMMM, HH:mm")}</span>
+          <span className="inline-block first-letter:uppercase">{formatLocal(a.startsAt, tz, "EEEE d 'de' MMMM, HH:mm")}</span>
         </p>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}

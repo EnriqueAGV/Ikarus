@@ -37,7 +37,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
         <div className="flex items-center gap-4">
           <Link
             href="/admin/new"
-            className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover"
+            className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm"
           >
             Nuevo consultorio
           </Link>
@@ -47,7 +47,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
       {businesses.length === 0 ? (
         <p className="text-sm text-neutral-500">Aún no hay consultorios.</p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="card divide-y overflow-hidden">
           {businesses.map((b) => (
             <li key={b.id} className="flex items-center justify-between px-4 py-3">
               <Link href={`/admin/businesses/${b.id}`} className="font-medium hover:underline">

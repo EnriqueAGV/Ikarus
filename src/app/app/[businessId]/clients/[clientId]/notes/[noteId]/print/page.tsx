@@ -65,7 +65,7 @@ export default async function PrintNotePage({ params }: PageProps<"/app/[busines
       <NoteBody note={note} codes={codes} />
       {addenda.length > 0 && (
         <section className="flex flex-col gap-2 border-t pt-3">
-          <h3 className="text-sm font-medium">Adendas</h3>
+          <h3 className="text-sm font-semibold">Adendas</h3>
           {addenda.map((a) => (
             <div key={a.id} className="text-sm">
               <p className="whitespace-pre-wrap">{a.body}</p>

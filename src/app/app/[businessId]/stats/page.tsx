@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can, requireBusinessAccess } from "@/lib/auth";
@@ -19,9 +20,9 @@ function Delta({ now, before }: { now: number; before: number }) {
 
 function Stat({ label, value, hint }: { label: string; value: string | number; hint?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1 rounded-md border p-4">
+    <div className="card flex flex-col gap-1 p-5">
       <span className="text-xs text-neutral-500">{label}</span>
-      <span className="text-2xl font-semibold tabular-nums">{value}</span>
+      <span className="text-3xl font-semibold tracking-tight tabular-nums">{value}</span>
       {hint}
     </div>
   );
@@ -29,6 +30,7 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
 
 // A month at the clinic, for its managers.
 export default async function StatsPage({ params, searchParams }: PageProps<"/app/[businessId]/stats">) {
+  await connection();
   const { businessId } = await params;
   const sp = await searchParams;
   const membership = await requireBusinessAccess(businessId);
@@ -43,17 +45,17 @@ export default async function StatsPage({ params, searchParams }: PageProps<"/ap
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-2">
-        <Link href={href(shiftMonth(month, -1))} className="rounded-md border px-2 py-1 text-sm" aria-label="Mes anterior">
+        <Link href={href(shiftMonth(month, -1))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50 text-sm" aria-label="Mes anterior">
           ←
         </Link>
         {month < current ? (
-          <Link href={href(shiftMonth(month, 1))} className="rounded-md border px-2 py-1 text-sm" aria-label="Mes siguiente">
+          <Link href={href(shiftMonth(month, 1))} className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50 text-sm" aria-label="Mes siguiente">
             →
           </Link>
         ) : (
-          <span className="rounded-md border px-2 py-1 text-sm text-neutral-300">→</span>
+          <span className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50 text-sm text-neutral-300">→</span>
         )}
-        <h2 className="ml-2 text-lg font-medium capitalize">{title}</h2>
+        <h2 className="ml-2 text-lg font-semibold capitalize">{title}</h2>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -72,8 +74,9 @@ export default async function StatsPage({ params, searchParams }: PageProps<"/ap
 
       {m.byDoctor.length > 1 && (
         <section className="flex flex-col gap-2">
-          <h3 className="font-medium">Por doctor</h3>
-          <table className="w-full max-w-xl text-sm">
+          <h3 className="font-semibold">Por doctor</h3>
+          <div className="card max-w-xl overflow-hidden px-5 py-3">
+          <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-neutral-500">
                 <th className="pb-1 font-normal">Doctor</th>
@@ -93,6 +96,7 @@ export default async function StatsPage({ params, searchParams }: PageProps<"/ap
               ))}
             </tbody>
           </table>
+          </div>
         </section>
       )}
       <p className="text-xs text-neutral-500">

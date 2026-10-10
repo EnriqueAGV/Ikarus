@@ -24,14 +24,14 @@ export default async function PrivacyNoticePage({ params }: PageProps<"/privacid
       <h1 className="text-2xl font-semibold">Aviso de privacidad de {business.name}</h1>
       <p className="text-xs text-neutral-500">Versión {NOTICE_VERSION}</p>
 
-      <h2 className="mt-2 font-medium">Quién es responsable de sus datos</h2>
+      <h2 className="mt-2 font-semibold">Quién es responsable de sus datos</h2>
       <p>
         {business.name} (el consultorio) es responsable de sus datos personales. Usa Praxia, un servicio que guarda
         la agenda y el expediente del consultorio y responde los mensajes de WhatsApp en su nombre. Praxia trata sus
         datos solo por encargo del consultorio y siguiendo sus instrucciones.
       </p>
 
-      <h2 className="mt-2 font-medium">Qué datos guardamos</h2>
+      <h2 className="mt-2 font-semibold">Qué datos guardamos</h2>
       <p>
         Su nombre, número de WhatsApp, fecha de nacimiento, los mensajes que nos envía, sus citas y el motivo de la
         consulta. En el consultorio también pueden registrarse su DUI, dirección, contactos de emergencia y su
@@ -39,33 +39,33 @@ export default async function PrivacyNoticePage({ params }: PageProps<"/privacid
         los ven los doctores del consultorio.
       </p>
 
-      <h2 className="mt-2 font-medium">Para qué los usamos</h2>
+      <h2 className="mt-2 font-semibold">Para qué los usamos</h2>
       <p>
         Para agendar, confirmar, cambiar y recordarle sus citas, para su atención médica y para llevar su expediente
         clínico como exige la ley. No los usamos para publicidad ni los vendemos.
       </p>
 
-      <h2 className="mt-2 font-medium">Con quién se comparten</h2>
+      <h2 className="mt-2 font-semibold">Con quién se comparten</h2>
       <p>
         Con el personal del consultorio según su función, y con los proveedores que hacen funcionar el servicio
         (alojamiento de datos, WhatsApp y el asistente automático de mensajes). Sus datos viajan y se guardan cifrados.
         No los compartimos con nadie más salvo con su autorización por escrito o cuando la ley lo exija.
       </p>
 
-      <h2 className="mt-2 font-medium">Cuánto tiempo los guardamos</h2>
+      <h2 className="mt-2 font-semibold">Cuánto tiempo los guardamos</h2>
       <p>
         El expediente clínico se conserva el tiempo que exigen las normas de salud, aunque usted deje de ser paciente.
         Por eso las notas médicas no se pueden borrar; sí se pueden corregir con una nota adicional.
       </p>
 
-      <h2 className="mt-2 font-medium">Sus derechos</h2>
+      <h2 className="mt-2 font-semibold">Sus derechos</h2>
       <p>
         Puede pedir ver sus datos, corregirlos, recibir una copia, oponerse a su uso o retirar este consentimiento,
         escribiendo al WhatsApp del consultorio o pidiéndolo en su próxima visita. Si retira el consentimiento, el
         asistente automático deja de atenderle y el consultorio le atiende directamente.
       </p>
 
-      <h2 className="mt-2 font-medium">Su autorización</h2>
+      <h2 className="mt-2 font-semibold">Su autorización</h2>
       <p>
         Al tocar &quot;Acepto&quot; o escribir ACEPTO en WhatsApp, usted autoriza al consultorio a tratar sus datos personales y
         de salud para los fines descritos aquí. Guardamos la fecha y el mensaje con que lo aceptó.

@@ -17,7 +17,7 @@ type Fields = {
   spo2: string;
 };
 
-const input = "rounded-md border px-2 py-1 text-sm";
+const input = "rounded-xl border px-2 py-1.5 text-sm";
 const label = "flex flex-col gap-1 text-xs text-neutral-500";
 const AUTOSAVE_MS = 2000;
 
@@ -138,7 +138,7 @@ export function NoteEditor({
         <span className="text-xs text-neutral-500">Diagnósticos (CIE-10)</span>
         <ul className="flex flex-col gap-1">
           {codes.map((c) => (
-            <li key={c.code} className="flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-sm">
+            <li key={c.code} className="flex items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-sm">
               <input type="hidden" name="diagnosisCodes" value={c.code} />
               <span>
                 <span className="font-mono">{c.code}</span> {c.description}
@@ -161,7 +161,7 @@ export function NoteEditor({
           className={input}
         />
         {shown.length > 0 && (
-          <ul className="max-h-60 overflow-y-auto rounded-md border text-sm">
+          <ul className="card max-h-60 overflow-y-auto text-sm">
             {shown.map((r) => (
               <li key={r.code}>
                 <button
@@ -185,7 +185,7 @@ export function NoteEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className={`text-xs ${state.error ? "text-red-600" : "text-neutral-500"}`}>{status}</span>
         <div className="flex gap-2">
-          <button type="button" onClick={saveNow} className="rounded-md border px-3 py-1.5 text-sm">
+          <button type="button" onClick={saveNow} className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">
             Guardar
           </button>
           <button
@@ -197,7 +197,7 @@ export function NoteEditor({
                 clearTimeout(timer.current);
               }
             }}
-            className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover"
+            className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm"
           >
             Firmar
           </button>

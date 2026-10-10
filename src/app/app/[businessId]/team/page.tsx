@@ -18,9 +18,9 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
-      {error && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</p>}
+      {error && <p className="notice notice-error text-sm">{error}</p>}
       {typeof sp.invited === "string" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">
+        <div className="notice notice-ok flex flex-wrap items-center justify-between gap-2 text-sm">
           <span>
             {sp.emailed
               ? `Listo. Enviamos una invitación a ${sp.invited}; con el enlace del correo crea su contraseña. Después entra en ${loginUrl}.`
@@ -29,10 +29,10 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
           <CopyButton text={loginUrl} />
         </div>
       )}
-      {sp.exists && <p className="rounded-md border p-3 text-sm">Esa persona ya es parte del equipo.</p>}
-      {sp.forgot && <p className="rounded-md border p-3 text-sm">Listo. Esa persona tendrá que confirmar cada dispositivo con un código.</p>}
+      {sp.exists && <p className="card p-4 text-sm">Esa persona ya es parte del equipo.</p>}
+      {sp.forgot && <p className="card p-4 text-sm">Listo. Esa persona tendrá que confirmar cada dispositivo con un código.</p>}
 
-      <ul className="divide-y rounded-md border">
+      <ul className="card divide-y overflow-hidden">
         {members.map((m) => (
           <li key={m.memberId} className="flex items-center justify-between gap-2 px-4 py-3">
             <div>
@@ -71,27 +71,27 @@ export default async function TeamPage({ params, searchParams }: PageProps<"/app
         {members.length === 0 && <li className="px-4 py-3 text-sm text-neutral-500">Sin miembros.</li>}
       </ul>
 
-      <form action={inviteMemberAction.bind(null, business.id)} className="flex flex-wrap items-end gap-2 rounded-md border border-dashed p-3">
+      <form action={inviteMemberAction.bind(null, business.id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Correo
-          <input name="email" type="email" required placeholder="persona@consultorio.com" className="w-64 rounded-md border px-2 py-1 text-sm" />
+          <input name="email" type="email" required placeholder="persona@consultorio.com" className="w-64 rounded-xl border px-2 py-1.5 text-sm" />
         </label>
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Rol
-          <select name="role" defaultValue="assistant" className="rounded-md border px-2 py-1 text-sm">
+          <select name="role" defaultValue="assistant" className="rounded-xl border px-2 py-1.5 text-sm">
             <option value="assistant">Asistente: agenda y datos del paciente</option>
             <option value="doctor">Doctor: también datos clínicos y su propia agenda</option>
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-neutral-500">
           Nombre que ven los pacientes (doctores)
-          <input name="displayName" placeholder="Dra. Ana López" className="w-56 rounded-md border px-2 py-1 text-sm" />
+          <input name="displayName" placeholder="Dra. Ana López" className="w-56 rounded-xl border px-2 py-1.5 text-sm" />
         </label>
         <label className="flex items-center gap-1 text-xs text-neutral-500">
           <input name="managesClinic" type="checkbox" />
           Administra ajustes y equipo
         </label>
-        <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">
+        <button className="rounded-full bg-brand px-4 py-1.5 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">
           Invitar
         </button>
       </form>

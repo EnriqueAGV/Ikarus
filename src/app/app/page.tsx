@@ -19,7 +19,7 @@ export default async function MyBusinessesPage() {
           Tu cuenta todavía no pertenece a ningún consultorio.
         </p>
       ) : (
-        <ul className="divide-y rounded-md border">
+        <ul className="card divide-y overflow-hidden">
           {businesses.map((b) => (
             <li key={b.id} className="px-4 py-3">
               <Link href={`/app/${b.id}`} className="font-medium hover:underline">

@@ -26,7 +26,7 @@ export default async function OnboardingSuccessPage({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center gap-3 px-4 text-center">
+    <main className="card animate-enter mx-auto my-auto flex w-[calc(100%-2rem)] max-w-md flex-col gap-3 p-8 text-center">
       <Logo className="mx-auto mb-3 h-9 w-auto" />
       {connected ? (
         <>
@@ -35,7 +35,7 @@ export default async function OnboardingSuccessPage({
           <p className="text-sm text-neutral-500">
             Te enviamos un correo con el enlace a tu panel, donde configuras tus servicios y horarios.
           </p>
-          <Link href="/app" className="mx-auto rounded-md bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover">
+          <Link href="/app" className="mx-auto rounded-full bg-brand px-4 py-2 text-sm text-white hover:bg-brand-hover font-medium shadow-sm">
             Entrar a mi panel
           </Link>
         </>
