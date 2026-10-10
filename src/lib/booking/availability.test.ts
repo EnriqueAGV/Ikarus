@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSlots, fromLocalString, toLocalString, type SlotQuery } from "./availability";
+import { dayHours, findSlots, fromLocalString, toLocalString, type SlotQuery } from "./availability";
 
 const tz = "America/Mexico_City"; // UTC-6, no DST since 2022
 const base: SlotQuery = {
@@ -54,6 +54,26 @@ describe("findSlots", () => {
   it("keeps the minimum notice before now", () => {
     const now = new Date("2026-10-09T16:10:00Z"); // 10:10 local
     expect(local(findSlots({ ...base, now }))).toEqual(["2026-10-09T11:30"]);
+  });
+});
+
+describe("dayHours", () => {
+  const rules = [
+    { weekday: 5, startTime: "16:00:00", endTime: "19:00:00" },
+    { weekday: 5, startTime: "09:00:00", endTime: "14:00:00" },
+  ];
+  it("lists a weekday's hours in order", () => {
+    expect(dayHours(rules, [], "2026-10-09")).toEqual([
+      ["09:00", "14:00"],
+      ["16:00", "19:00"],
+    ]);
+    expect(dayHours(rules, [], "2026-10-10")).toEqual([]);
+  });
+  it("lets a date's exceptions replace the week", () => {
+    expect(dayHours(rules, [{ date: "2026-10-09", startTime: null, endTime: null }], "2026-10-09")).toEqual([]);
+    expect(dayHours(rules, [{ date: "2026-10-09", startTime: "10:00:00", endTime: "12:00:00" }], "2026-10-09")).toEqual([
+      ["10:00", "12:00"],
+    ]);
   });
 });
 
