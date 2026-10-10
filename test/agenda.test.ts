@@ -80,7 +80,7 @@ describe("booking from the dashboard", () => {
     expect(call.path).toContain(PHONE_ID);
     expect(call.body).toMatchObject({ to: PHONE, template: { name: "praxia_cita_agendada" } });
     const [stored] = await db.select().from(schema.messages).where(eq(schema.messages.clientId, clientId));
-    expect(stored.body).toContain("quedó agendada para el martes 13 de octubre a las 11:00");
+    expect(stored.body).toContain("quedó agendada para el 13-10-2026 a las 11:00 AM");
   });
 
   it("books without a message when the template is not approved yet, or when asked not to", async () => {
@@ -241,7 +241,7 @@ describe("after a no-show", () => {
     expect(templateSends()[0].body).toMatchObject({ to: PHONE, template: { name: "praxia_no_asistio" } });
     const [stored] = await db.select().from(schema.messages).where(eq(schema.messages.clientId, clientId));
     expect(stored.body).toBe(
-      "Hola Ana, le esperábamos en Clínica Luna el martes 13 de octubre. Si desea una nueva cita, responda a este mensaje y con gusto le buscamos un horario.",
+      "Hola Ana, le esperábamos en Clínica Luna el 13-10-2026. Si desea una nueva cita, responda a este mensaje y con gusto le buscamos un horario.",
     );
   });
 

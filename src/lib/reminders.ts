@@ -257,8 +257,8 @@ export function templateParams(row: Pick<Loaded, "appointment" | "business" | "c
     nombre: row.client.name?.trim() || "paciente",
     consultorio: row.business.name,
     doctor: row.practitionerName,
-    fecha: formatInTimeZone(row.appointment.startsAt, tz, "EEEE d 'de' MMMM", { locale: es }),
-    hora: formatInTimeZone(row.appointment.startsAt, tz, "HH:mm"),
+    fecha: formatInTimeZone(row.appointment.startsAt, tz, "dd-MM-yyyy", { locale: es }),
+    hora: formatInTimeZone(row.appointment.startsAt, tz, "h:mm a"),
   };
 }
 

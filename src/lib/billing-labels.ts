@@ -4,7 +4,7 @@ import { es } from "date-fns/locale";
 import type { Standing } from "./billing";
 
 const fmt = (d: Date | string, tz: string) =>
-  formatInTimeZone(typeof d === "string" ? new Date(`${d}T12:00:00Z`) : d, typeof d === "string" ? "UTC" : tz, "d 'de' MMMM yyyy", { locale: es });
+  formatInTimeZone(typeof d === "string" ? new Date(`${d}T12:00:00Z`) : d, typeof d === "string" ? "UTC" : tz, "dd-MM-yyyy", { locale: es });
 
 // The clinic's billing state in a sentence, for its settings and Praxia's admin.
 export function standingLabel(s: Standing, timezone: string) {

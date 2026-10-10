@@ -1,3 +1,4 @@
+import { displayDate, displayDateTime } from "@/lib/dates";
 import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -45,8 +46,6 @@ const templateStatusLabel = {
   REJECTED: "Rechazada",
   DISABLED: "Desactivada",
 } as const;
-
-const dateFmt = new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: "short" });
 
 export default async function AdminBusinessPage({
   params,
@@ -105,7 +104,7 @@ export default async function AdminBusinessPage({
             {current ? (
               <>
                 <p className="text-sm text-neutral-500">
-                  Envía este enlace al consultorio. Vence el {dateFmt.format(current.expiresAt)}.
+                  Envía este enlace al consultorio. Vence el {displayDateTime(current.expiresAt, business.timezone)}.
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <code className="break-all rounded bg-neutral-100 px-2 py-1 text-xs dark:bg-neutral-900">
@@ -195,7 +194,7 @@ export default async function AdminBusinessPage({
             {invoices.map((inv) => (
               <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <span>
-                  <span className="font-mono">{transferReference(inv)}</span> · {inv.periodStart} a {inv.periodEnd} ·{" "}
+                  <span className="font-mono">{transferReference(inv)}</span> · {displayDate(inv.periodStart)} a {displayDate(inv.periodEnd)} ·{" "}
                   {formatMoney(inv.amountCents, inv.currency)}
                 </span>
                 {inv.status === "pending" ? (
@@ -237,7 +236,7 @@ export default async function AdminBusinessPage({
           <ul className="text-sm">
             {links.map((l) => (
               <li key={l.id} className="flex justify-between py-1 text-neutral-500">
-                <span>{dateFmt.format(l.createdAt)}</span>
+                <span>{displayDateTime(l.createdAt, business.timezone)}</span>
                 <span>
                   {linkStatusLabel[l.status]}
                   {l.errorCode ? ` · ${l.errorCode}` : ""}

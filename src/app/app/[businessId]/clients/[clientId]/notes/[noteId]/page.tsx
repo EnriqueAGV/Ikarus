@@ -39,7 +39,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
             {note.status === "signed" ? `Nota ${note.number}` : "Nota en borrador"}
           </h2>
           <p className="text-sm text-neutral-500">
-            {practitioner.displayName} · <span className="capitalize">{formatLocal(note.createdAt, tz, "EEEE d MMM yyyy, HH:mm")}</span>
+            {practitioner.displayName} · <span className="capitalize">{formatLocal(note.createdAt, tz, "dd-MM-yyyy, h:mm a")}</span>
             {appointment && ` · cita de ${appointment.serviceName}`}
           </p>
         </div>
@@ -89,7 +89,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
           <NoteBody note={note} codes={codes} />
           {note.status === "signed" && (
             <p className="text-xs text-neutral-500">
-              Firmada por {signer?.fullName ?? signer?.email} el {formatLocal(note.signedAt!, tz, "d MMM yyyy, HH:mm")}.{" "}
+              Firmada por {signer?.fullName ?? signer?.email} el {formatLocal(note.signedAt!, tz, "dd-MM-yyyy, h:mm a")}.{" "}
               {verifySignature(note) ? "El contenido coincide con la firma." : "El contenido NO coincide con la firma."}
             </p>
           )}
@@ -105,7 +105,7 @@ export default async function NotePage({ params, searchParams }: PageProps<"/app
               <li key={a.id} className="text-sm">
                 <p className="whitespace-pre-wrap">{a.body}</p>
                 <p className="text-xs text-neutral-500">
-                  {a.practitionerName ?? a.authorName ?? a.authorEmail} · {formatLocal(a.createdAt, tz, "d MMM yyyy, HH:mm")}
+                  {a.practitionerName ?? a.authorName ?? a.authorEmail} · {formatLocal(a.createdAt, tz, "dd-MM-yyyy, h:mm a")}
                 </p>
               </li>
             ))}

@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import type { FormAction, FormResult } from "@/lib/dashboard/form-result";
 
 // Submit manually so React never resets uncontrolled fields after validation failure.
-export function RecordForm({ action, children, className, submitLabel = "Guardar cambios", submitTone = "primary", dirtyWarning = true, review, reviewTitle = "Revisar cambios", resetOnSuccess = false }: {
+export function RecordForm({ action, children, className, submitLabel = "Guardar cambios", submitTone = "primary", dirtyWarning = true, review, reviewTitle = "Revisar cambios", resetOnSuccess = false, modalTitle, reviewPhone }: {
   action: FormAction; children: React.ReactNode; className?: string; submitLabel?: string;
   dirtyWarning?: boolean; review?: React.ReactNode; reviewTitle?: string; resetOnSuccess?: boolean;
   submitTone?: "primary" | "secondary" | "danger";
+  modalTitle?: string; reviewPhone?: string;
 }) {
   const [result, setResult] = useState<FormResult | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -15,14 +16,17 @@ export function RecordForm({ action, children, className, submitLabel = "Guardar
   const [reviewValues, setReviewValues] = useState<string[]>([]);
   const form = useRef<HTMLFormElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
+  const editor = useRef<HTMLDialogElement>(null);
+  const launcher = useRef<HTMLButtonElement>(null);
   const payload = useRef<FormData | null>(null);
   const router = useRouter();
   const titleId = useId();
+  const editorTitleId = useId();
   const errorId = useId();
   const submitClass = { primary: "btn-primary", secondary: "btn-secondary", danger: "btn-danger" }[submitTone];
   useEffect(() => {
     if (pending || !result || result.ok || !result.field) return;
-    const field = form.current?.elements.namedItem(result.field);
+    const field = form.current?.querySelector<HTMLElement>(`[data-field="${result.field}"]`) ?? form.current?.elements.namedItem(result.field);
     if (field instanceof HTMLElement) {
       field.setAttribute("aria-invalid", "true");
       field.setAttribute("aria-describedby", errorId);
@@ -45,24 +49,42 @@ export function RecordForm({ action, children, className, submitLabel = "Guardar
     try {
       const next = await action(data);
       setResult(next);
-      if (next.ok) { setDirty(false); if (resetOnSuccess) form.current?.reset(); dialog.current?.close(); if (next.href) router.push(next.href); }
+      if (!next.ok && next.field) dialog.current?.close();
+      if (next.ok) { setDirty(false); if (resetOnSuccess) form.current?.reset(); dialog.current?.close(); editor.current?.close(); if (next.href) router.push(next.href); }
     } catch { setResult({ ok: false, message: "No se pudo completar el cambio. Tus datos siguen aquí; vuelve a intentarlo." }); }
   });
-  return <>
-    <form ref={form} className={className} onChange={event => { setDirty(true); if (event.target instanceof HTMLElement) { event.target.removeAttribute("aria-invalid"); event.target.removeAttribute("aria-describedby"); } }} onSubmit={event => {
+  const discard = () => {
+    form.current?.reset();
+    form.current?.querySelectorAll('[aria-invalid="true"]').forEach(field => { field.removeAttribute("aria-invalid"); field.removeAttribute("aria-describedby"); });
+    setDirty(false); setResult(null);
+  };
+  const fields = <form ref={form} className={className} onChange={event => { setDirty(true); if (event.target instanceof HTMLElement) { event.target.removeAttribute("aria-invalid"); event.target.removeAttribute("aria-describedby"); } }} onSubmit={event => {
       event.preventDefault();
       if (pending) return;
       const data = new FormData(event.currentTarget);
-      if (review) { payload.current = data; setReviewValues(["phone"].flatMap(key => data.has(key) ? [`Nuevo WhatsApp: ${String(data.get(key)) || "Sin WhatsApp"}`] : [])); dialog.current?.showModal(); }
+      setResult(null);
+      if (review && (reviewPhone === undefined || String(data.get("phone") ?? "").trim() !== reviewPhone.trim())) { payload.current = data; setReviewValues(["phone"].flatMap(key => data.has(key) ? [`Nuevo WhatsApp: ${String(data.get(key)) || "Sin WhatsApp"}`] : [])); dialog.current?.showModal(); }
       else send(data);
     }} aria-busy={pending}>
       <fieldset disabled={pending} className="contents">{children}</fieldset>
       {result && <p id={errorId} role={result.ok ? "status" : "alert"} className={`notice ${result.ok ? "notice-ok" : "notice-error"} col-span-full`}>{result.message}</p>}
       <div className="col-span-full flex flex-wrap items-center justify-between gap-3 pt-4">
         <span className="text-xs text-muted">{dirty && dirtyWarning ? "Cambios sin guardar" : ""}</span>
-        <div className="flex flex-wrap gap-2">{dirtyWarning && <button type="button" disabled={pending} className="btn-quiet" onClick={() => { form.current?.reset(); form.current?.querySelectorAll('[aria-invalid="true"]').forEach(field => { field.removeAttribute("aria-invalid"); field.removeAttribute("aria-describedby"); }); setDirty(false); setResult(null); }}>Cancelar cambios</button>}<button type="submit" disabled={pending} className={submitClass}>{pending ? "Guardando…" : submitLabel}</button></div>
+        <div className="flex flex-wrap gap-2">{dirtyWarning && <button type="button" disabled={pending} className="btn-quiet" onClick={() => { discard(); editor.current?.close(); }}>{modalTitle ? "Cancelar" : "Cancelar cambios"}</button>}<button type="submit" disabled={pending} className={submitClass}>{pending ? "Guardando…" : submitLabel}</button></div>
       </div>
-    </form>
+    </form>;
+  return <>
+    {modalTitle ? <>
+      <button ref={launcher} type="button" className="btn-primary" aria-haspopup="dialog" onClick={() => { discard(); editor.current?.showModal(); }}>Editar datos</button>
+      {result?.ok && <p role="status" className="mt-3 text-sm text-muted">{result.message}</p>}
+      <dialog ref={editor} aria-labelledby={editorTitleId} className="review-dialog patient-editor" onCancel={event => {
+        event.preventDefault();
+        if (!pending && (!dirty || window.confirm("Hay cambios sin guardar. ¿Cerrar sin guardarlos?"))) { discard(); editor.current?.close(); }
+      }} onClose={() => launcher.current?.focus()}>
+        <h3 id={editorTitleId} className="mb-6 text-xl font-semibold">{modalTitle}</h3>
+        {fields}
+      </dialog>
+    </> : fields}
     {review && <dialog ref={dialog} aria-labelledby={titleId} className="review-dialog" onClose={() => form.current?.querySelector<HTMLButtonElement>('[type="submit"]')?.focus()} onCancel={event => { if (pending) event.preventDefault(); }}>
       <h3 id={titleId} className="text-xl font-semibold">{reviewTitle}</h3>
       <div className="my-5 space-y-4 text-sm">{review}{reviewValues.map(value => <p key={value} className="font-medium">{value}</p>)}</div>

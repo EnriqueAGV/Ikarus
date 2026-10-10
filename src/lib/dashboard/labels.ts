@@ -42,7 +42,7 @@ export const appointmentStatusTone: Record<keyof typeof appointmentStatusLabel, 
 export const weekdayLabel = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 export const settingsErrorLabel: Record<string, string> = {
-  invalid_time: "Revisa las horas: usa el formato HH:MM.",
+  invalid_time: "Revisa las horas: usa AM o PM, por ejemplo 2:30 PM.",
   end_before_start: "La hora de cierre debe ser después de la de apertura.",
   overlap: "Hay horarios que se enciman el mismo día.",
   invalid_weekday: "Día no válido.",
@@ -108,7 +108,7 @@ export const noticeLabel: Record<string, string> = {
   service_stopped: "el asistente está detenido porque el plan del consultorio venció.",
 };
 
-export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MMM, HH:mm") {
+export function formatLocal(instant: Date, timezone: string, pattern = "dd-MM-yyyy, h:mm a") {
   return formatInTimeZone(instant, timezone, pattern, { locale: es });
 }
 

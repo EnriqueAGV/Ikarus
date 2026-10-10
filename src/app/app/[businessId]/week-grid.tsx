@@ -1,3 +1,4 @@
+import { displayTime } from "@/lib/dates";
 import Link from "next/link";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
 import type { blocksBetween, DayHours } from "@/lib/dashboard/agenda";
@@ -83,10 +84,10 @@ export function WeekGrid({
           return (
             <Link key={d} href={dayHref(d)} className="border-l px-2 py-2 hover:bg-black/[0.025]">
               <span className={`block text-xs font-semibold capitalize ${d === today ? "text-brand" : ""}`}>
-                {formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}
+                {formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "dd-MM-yyyy")}
               </span>
               <span className="block truncate text-[11px] text-neutral-500">
-                {h?.open ? `${h.from}–${h.to}` : h ? (h.note ?? "Cerrado") : ""}
+                {h?.open ? `${displayTime(h.from)}–${displayTime(h.to)}` : h ? (h.note ?? "Cerrado") : ""}
               </span>
             </Link>
           );
@@ -100,7 +101,7 @@ export function WeekGrid({
               className={`absolute right-2 text-[11px] tabular-nums text-neutral-400 ${m === from ? "translate-y-0.5" : "-translate-y-1/2"}`}
               style={{ top: y(m) }}
             >
-              {`${String(m / 60).padStart(2, "0")}:00`}
+              {displayTime(`${String(m / 60).padStart(2, "0")}:00`)}
             </span>
           ))}
         </div>
@@ -184,4 +185,4 @@ export function WeekGrid({
   );
 }
 
-const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const hhmm = (m: number) => displayTime(`${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);

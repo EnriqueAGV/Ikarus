@@ -1,3 +1,5 @@
+import { displayDate } from "@/lib/dates";
+import { DateInput } from "@/components/date-input";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can, requireBusinessAccess } from "@/lib/auth";
@@ -26,7 +28,7 @@ import { RecordForm } from "@/components/dashboard/record-form";
 import { SubmitButton } from "@/components/submit-button";
 import { replyEligibility } from "@/lib/messaging/eligibility";
 import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
-import { editPatientAction, editClinicalAction, editPhoneAction, replyAction, olderMessagesAction, resolveConversationAction, reviewedArchiveAction, reviewIntakeAction } from "../../workflow-actions";
+import { editPatientAction, editClinicalAction, replyAction, olderMessagesAction, resolveConversationAction, reviewedArchiveAction, reviewIntakeAction } from "../../workflow-actions";
 import { ConfirmButton } from "@/components/confirm-button";
 import {
   restorePatientAction,
@@ -154,7 +156,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
       {client.archivedAt && !mergedInto && (
         <div className="notice notice-warn flex flex-wrap items-center justify-between gap-3 text-sm">
           <span>
-            Paciente archivado el {formatLocal(client.archivedAt, tz, "d 'de' MMMM yyyy")}. No aparece en Pacientes ni lo ve el
+            Paciente archivado el {formatLocal(client.archivedAt, tz, "dd-MM-yyyy")}. No aparece en Pacientes ni lo ve el
             asistente. Restaurarlo no recupera las citas canceladas.
           </span>
           <form action={restorePatientAction.bind(null, business.id, client.id)}>
@@ -170,46 +172,38 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
       </nav>
 
       {view === "summary" && <section className="card dashboard-card">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><h3 className="font-semibold">Resumen del paciente</h3><Link className="btn-secondary" href={viewHref("data")}>Ver y editar datos</Link></div>
+        <h3 className="mb-5 font-semibold">Resumen del paciente</h3>
         <dl className="grid gap-5 sm:grid-cols-3">
-          <div><dt className="text-sm text-muted">Fecha de nacimiento</dt><dd className="mt-1 font-medium">{client.dateOfBirth ? formatLocal(new Date(`${client.dateOfBirth}T12:00:00Z`), "UTC", "d MMM yyyy") : "Sin registrar"}</dd></div>
+          <div><dt className="text-sm text-muted">Fecha de nacimiento</dt><dd className="mt-1 font-medium">{client.dateOfBirth ? displayDate(client.dateOfBirth) : "Sin registrar"}</dd></div>
           <div><dt className="text-sm text-muted">WhatsApp</dt><dd className="mt-1 font-medium">{formatPhone(conversation.waPhone)}</dd>{others.length > 0 && <dd className="mt-1 text-xs text-muted">Contacto compartido · recibe {conversation.name ?? "el titular del número"}</dd>}</div>
           <div><dt className="text-sm text-muted">Atención del equipo</dt><dd className="mt-1 font-medium">{conversation.attentionStatus === "needs_reply" ? "Pendiente de respuesta" : conversation.attentionStatus === "follow_up" ? "En seguimiento" : "Sin pendientes"}</dd><dd className="mt-1 text-xs text-muted">{conversation.agentPaused ? "Asistente en pausa" : "Asistente activo"}</dd></div>
         </dl>
-        <div className="mt-5 border-t pt-4"><Link href={viewHref("conversation")} className="text-sm font-medium text-brand hover:underline">Abrir conversación con {conversation.name ?? "el contacto"} →</Link></div>
         {clinical && <div className="mt-5 grid gap-4 border-t pt-4 sm:grid-cols-2"><div><p className="text-sm text-muted">Alergias registradas</p><p className="mt-1 whitespace-pre-wrap text-sm">{client.allergies || "Sin información registrada"}</p></div><div><p className="text-sm text-muted">Enfermedades crónicas registradas</p><p className="mt-1 whitespace-pre-wrap text-sm">{client.chronicConditions || "Sin información registrada"}</p></div></div>}
       </section>}
 
       {view === "data" && <section id="datos" className="card dashboard-card">
-        <h3 className="mb-3 font-semibold">Datos del paciente</h3>
-        {editable && (
-          <RecordForm action={editPhoneAction.bind(null, business.id, client.id)} className="mb-5 flex flex-wrap items-end gap-3 border-b pb-5" submitTone="secondary" submitLabel="Cambiar WhatsApp" reviewTitle="Cambiar el contacto de WhatsApp" review={<><p>Contacto actual: {formatPhone(client.waPhone)}</p><p>Expediente: {client.name ?? "Sin nombre"}.</p>{!client.holderId && others.length > 0 && <p className="notice notice-warn">También cambia el WhatsApp de: {others.map(o => o.name ?? "Sin nombre").join(", ")}.</p>}<p>Si el nuevo número pertenece a otro paciente, se comparte su conversación. Revisa el destino antes de confirmar.</p></>} >
-            <label className={label}>
-              WhatsApp
-              <input name="phone" type="tel" defaultValue={client.waPhone ?? ""} placeholder="7000 0000" className={input} />
-            </label>
-            <p className="basis-full text-xs text-neutral-500">
-              {others.length > 0 && !client.holderId
-                ? "Quienes comparten este WhatsApp pasan también al nuevo número. "
-                : ""}
-              Déjalo vacío si el paciente no usa WhatsApp. Si el número ya es de otro paciente de la familia, este paciente pasa a compartirlo.
-            </p>
-          </RecordForm>
-        )}
-        <dl className="mb-6 grid gap-4 sm:grid-cols-2">
-          {[["Nombre", client.name], ["Fecha de nacimiento", client.dateOfBirth], ["DUI", client.dui], ["Dirección", client.address], ["Responsable", client.guardianName], ["Teléfono del responsable", client.guardianPhone], ["Contacto de emergencia", client.emergencyContactName], ["Teléfono de emergencia", client.emergencyContactPhone], ["Médico de preferencia", practitioners.find(p => p.id === client.preferredPractitionerId)?.displayName]].map(([key, value]) => <div key={key}><dt className="text-sm text-muted">{key}</dt><dd className="mt-1 break-words text-sm">{value || "Sin registrar"}</dd></div>)}
+        <h3 className="mb-6 font-semibold">Datos del paciente</h3>
+        <dl className="grid gap-5 sm:grid-cols-2">
+          {[["WhatsApp", formatPhone(client.waPhone)], ["Nombre", client.name], ["Fecha de nacimiento", client.dateOfBirth ? displayDate(client.dateOfBirth) : null], ["Sexo", client.sex === "female" ? "Femenino" : client.sex === "male" ? "Masculino" : null], ["DUI", client.dui], ["Dirección", client.address], ["Responsable", client.guardianName], ["Teléfono del responsable", client.guardianPhone], ["Contacto de emergencia", client.emergencyContactName], ["Teléfono de emergencia", client.emergencyContactPhone], ["Médico de preferencia", practitioners.find(p => p.id === client.preferredPractitionerId)?.displayName]].map(([key, value]) => <div key={key}><dt className="text-sm text-muted">{key}</dt><dd className="mt-1 break-words text-sm">{value || "Sin registrar"}</dd></div>)}
         </dl>
-        <fieldset disabled={!editable}>
-        <details open={!client.name}>
-        <summary className="mb-4 cursor-pointer py-2 text-sm font-semibold">Editar datos del paciente</summary>
-        <RecordForm action={editPatientAction.bind(null, business.id, client.id)} className="grid gap-4 sm:grid-cols-2">
+        {editable && <div className="mt-6 flex justify-end">
+        <RecordForm action={editPatientAction.bind(null, business.id, client.id)} modalTitle="Editar datos del paciente" submitLabel="Guardar datos" className="grid gap-5 sm:grid-cols-2" reviewPhone={client.waPhone ?? ""} reviewTitle="Revisar cambio de WhatsApp" review={<>
+          <p>Contacto actual: {formatPhone(client.waPhone)}</p>
+          <p>Expediente: {client.name ?? "Sin nombre"}.</p>
+          {!client.holderId && others.length > 0 && <p className="notice notice-warn">También cambia el WhatsApp de: {others.map(o => o.name ?? "Sin nombre").join(", ")}.</p>}
+          <p>Si el nuevo número pertenece a otro paciente, se comparte su conversación. Los datos y el contacto se guardarán juntos.</p>
+        </>}>
+          <label className={`${label} sm:col-span-2`}>WhatsApp
+            <input name="phone" type="tel" defaultValue={client.waPhone ?? ""} placeholder="7000 0000" className={input} />
+            <span className="text-xs">Déjalo vacío si el paciente no usa WhatsApp. Si el número pertenece a otro paciente, pasa a compartirlo.{!client.holderId && others.length > 0 && " Cambiarlo también actualiza el contacto de quienes lo comparten."}</span>
+          </label>
           <label className={label}>
             Nombre completo
             <input name="name" defaultValue={client.name ?? ""} required className={input} />
           </label>
           <label className={label}>
             Fecha de nacimiento
-            <input name="dateOfBirth" type="date" defaultValue={client.dateOfBirth ?? ""} className={input} />
+            <DateInput name="dateOfBirth" defaultValue={client.dateOfBirth ?? ""} className={input} />
           </label>
           <label className={label}>
             Sexo
@@ -256,7 +250,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
             </select>
           </label>
         </RecordForm>
-        </details></fieldset>
+        </div>}
       </section>}
 
       {clinical && view === "clinical" && (
@@ -286,7 +280,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                   <select name="appointmentId" defaultValue={visits[0].id} className={input} aria-label="Cita">
                     {visits.map((v) => (
                       <option key={v.id} value={v.id}>
-                        {formatLocal(v.startsAt, tz, "EEE d MMM yyyy, HH:mm")} · {v.serviceName}
+                        {formatLocal(v.startsAt, tz, "dd-MM-yyyy, h:mm a")} · {v.serviceName}
                       </option>
                     ))}
                   </select>
@@ -311,7 +305,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                   <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
                     {group[0].appointmentStartsAt ? (
                       <span className="capitalize">
-                        Cita del {formatLocal(group[0].appointmentStartsAt, tz, "EEE d MMM yyyy, HH:mm")} · {group[0].serviceName}
+                        Cita del {formatLocal(group[0].appointmentStartsAt, tz, "dd-MM-yyyy, h:mm a")} · {group[0].serviceName}
                       </span>
                     ) : (
                       "Sin cita"
@@ -323,7 +317,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                         <Link href={`/app/${business.id}/clients/${n.clientId}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
                           <span>
                             {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
-                            <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
+                            <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "dd-MM-yyyy")}</span> · {n.practitionerName}
                             {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
                             {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
                             {n.clientId !== client.id && <span className="text-neutral-500"> · del expediente unido</span>}
@@ -364,7 +358,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                       {rx.items.map((i) => i.drug).join(", ")}
                       <span className="text-neutral-500"> · {practitionerName}</span>
                     </span>
-                    <span className="shrink-0 capitalize text-neutral-500">{formatLocal(rx.createdAt, tz, "EEE d MMM yyyy")}</span>
+                    <span className="shrink-0 capitalize text-neutral-500">{formatLocal(rx.createdAt, tz, "dd-MM-yyyy")}</span>
                   </Link>
                 </li>
               ))}
@@ -387,8 +381,8 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                     {f.fileName}
                     <span className="text-neutral-500">
                       {" "}
-                      · {formatBytes(f.sizeBytes)} · {formatLocal(f.createdAt, tz, "d MMM yyyy")}
-                      {f.appointmentStartsAt && ` · cita del ${formatLocal(f.appointmentStartsAt, tz, "d MMM")}`}
+                      · {formatBytes(f.sizeBytes)} · {formatLocal(f.createdAt, tz, "dd-MM-yyyy")}
+                      {f.appointmentStartsAt && ` · cita del ${formatLocal(f.appointmentStartsAt, tz, "dd-MM-yyyy")}`}
                     </span>
                   </a>
                   {f.clientId === client.id && (
@@ -422,7 +416,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                   <option value="">Sin cita</option>
                   {visits.map((v) => (
                     <option key={v.id} value={v.id}>
-                      {formatLocal(v.startsAt, tz, "d MMM yyyy")} · {v.serviceName}
+                      {formatLocal(v.startsAt, tz, "dd-MM-yyyy")} · {v.serviceName}
                     </option>
                   ))}
                 </select>
@@ -445,15 +439,15 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
               {answers.map((a) => (
                 <div key={a.label} className="min-w-0">
                   <dt className="text-neutral-500">{a.label}</dt>
-                  <dd className="mt-1 break-words">{a.value === undefined || a.value === null || a.value === "" ? "—" : String(a.value)}</dd>
+                  <dd className="mt-1 break-words">{a.value === undefined || a.value === null || a.value === "" ? "—" : displayDate(String(a.value))}</dd>
                 </div>
               ))}
             </dl>
           )}
           {intakeReviews.map(item => <div key={item.key} className="mt-5 border-t pt-4">
             <p className="text-sm font-medium">{item.label}: {item.same ? "Coincide con el expediente" : item.reviewed ? "Diferencia revisada" : "Requiere revisión"}</p>
-            {!item.same && <p className="mt-1 text-sm text-muted">Recibido: {item.received} · Expediente: {item.canonical ?? "Sin registrar"}</p>}
-            {item.reviewedAt && <p className="mt-1 text-xs text-muted">Revisado {formatLocal(new Date(item.reviewedAt), tz, "d MMM yyyy, HH:mm")}</p>}
+            {!item.same && <p className="mt-1 text-sm text-muted">Recibido: {displayDate(item.received)} · Expediente: {item.canonical ? displayDate(item.canonical) : "Sin registrar"}</p>}
+            {item.reviewedAt && <p className="mt-1 text-xs text-muted">Revisado {formatLocal(new Date(item.reviewedAt), tz, "dd-MM-yyyy, h:mm a")}</p>}
             {editable && !item.same && !item.reviewed && <RecordForm action={reviewIntakeAction.bind(null, business.id, client.id, item.key, item.received)} className="mt-3 space-y-3" dirtyWarning={false} submitTone="secondary" submitLabel="Confirmar dato revisado">
               <label className="field-label">Dato que quedará en el expediente<select name="decision" defaultValue="" required><option value="" disabled>Seleccionar</option><option value="received">Usar respuesta recibida por WhatsApp</option><option value="record">Conservar dato actual del expediente</option></select></label>
             </RecordForm>}
@@ -473,7 +467,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                 <li key={a.id} className="flex items-center justify-between gap-2">
                   <span>
                     <span className="mb-1 block text-xs text-muted">{upcoming.some(row => row.appointment.id === a.id) ? "Próxima cita" : "Historial"} · {practitionerName}</span>
-                    <Link href={`/app/${business.id}?date=${formatLocal(a.startsAt, tz, "yyyy-MM-dd")}`} className="hover:underline"><span className="capitalize">{formatLocal(a.startsAt, tz, "EEE d MMM yyyy, HH:mm")}</span> · {serviceName}</Link>
+                    <Link href={`/app/${business.id}?date=${formatLocal(a.startsAt, tz, "yyyy-MM-dd")}`} className="hover:underline"><span className="capitalize">{formatLocal(a.startsAt, tz, "dd-MM-yyyy, h:mm a")}</span> · {serviceName}</Link>
                   </span>
                   <span className={`rounded-full px-2 py-0.5 text-xs ${appointmentTone(a)}`}>
                     {appointmentLabel(a)}
@@ -506,7 +500,7 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
                 <span>
                   {a.practitionerName ?? a.fullName ?? a.email} · {accessActionLabel[a.action]}
                 </span>
-                <span className="text-neutral-500">{formatLocal(a.createdAt, tz, "d MMM yyyy, HH:mm")}</span>
+                <span className="text-neutral-500">{formatLocal(a.createdAt, tz, "dd-MM-yyyy, h:mm a")}</span>
               </li>
             ))}
           </ul>
@@ -541,11 +535,11 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
             Deja de aparecer en Pacientes y el asistente ya no lo ve. Sus citas próximas se cancelan. El expediente no se
             borra, porque debe conservarse, y puedes restaurarlo cuando quieras.
           </p>
-          <RecordForm action={reviewedArchiveAction.bind(null, business.id, client.id)} dirtyWarning={false} submitTone="danger" submitLabel="Revisar archivo del paciente" reviewTitle="Archivar paciente y cancelar citas" review={<>
+          <RecordForm action={reviewedArchiveAction.bind(null, business.id, client.id)} dirtyWarning={false} submitTone="danger" submitLabel="Archivar paciente" reviewTitle="Archivar paciente y cancelar citas" review={<>
             <p className="font-semibold">Paciente: {client.name ?? "Sin nombre"}</p>
             <p>Se conserva el expediente y sus documentos. Deja de aparecer entre los pacientes activos.</p>
             <p className="font-semibold">{upcoming.filter(row => row.appointment.startsAt > now).length} citas próximas se cancelarán:</p>
-            <ul className="space-y-2">{upcoming.filter(row => row.appointment.startsAt > now).map(({ appointment: a, serviceName, practitionerName }) => <li key={a.id}>{formatLocal(a.startsAt, tz, "d MMM yyyy, HH:mm")} · {serviceName} · {practitionerName}</li>)}</ul>
+            <ul className="space-y-2">{upcoming.filter(row => row.appointment.startsAt > now).map(({ appointment: a, serviceName, practitionerName }) => <li key={a.id}>{formatLocal(a.startsAt, tz, "dd-MM-yyyy, h:mm a")} · {serviceName} · {practitionerName}</li>)}</ul>
             <p className="notice notice-warn">Restaurar al paciente no recupera las citas canceladas.</p>
           </>}>
             {upcoming.filter(row => row.appointment.startsAt > now).map(({ appointment: a }) => <input key={a.id} type="hidden" name="appointmentId" value={a.id} />)}

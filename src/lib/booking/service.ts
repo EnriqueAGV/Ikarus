@@ -343,7 +343,7 @@ class KeepOriginal extends Error {
 export function describeSlot(instant: Date, timezone: string) {
   return {
     local: toLocalString(instant, timezone),
-    label: formatInTimeZone(instant, timezone, "EEEE d 'de' MMMM, HH:mm", { locale: es }),
+    label: formatInTimeZone(instant, timezone, "dd-MM-yyyy, h:mm a", { locale: es }),
   };
 }
 

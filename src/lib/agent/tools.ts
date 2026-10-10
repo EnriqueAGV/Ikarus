@@ -1,4 +1,5 @@
 import { openAttention } from "@/lib/messaging/attention";
+import { isoDate } from "@/lib/dates";
 import type { ChatTool } from "./llm";
 import { eq } from "drizzle-orm";
 import { addDays } from "date-fns";
@@ -192,7 +193,7 @@ export function spread<T>(slots: T[], dayOf: (slot: T) => string, perDay = 2, ma
   return picked;
 }
 
-const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && isoDate(s) !== null;
 
 const bookingErrors = {
   unknown_service: "That service does not exist. Call list_services.",
@@ -231,7 +232,11 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       for (const { key, value } of input.answers) {
         const field = ctx.fields.find((f) => f.key === key);
         if (!field) rejected.push(`${key}: unknown question`);
-        else if (field.type === "date" && !isDate(value)) rejected.push(`${key}: use YYYY-MM-DD`);
+        else if (field.type === "date") {
+          const date = isoDate(value.trim());
+          if (!date) rejected.push(`${key}: ask the patient for a valid DD-MM-YYYY date; store as YYYY-MM-DD`);
+          else data[key] = date;
+        }
         else if (field.type === "choice" && field.options?.length && !field.options.includes(value))
           rejected.push(`${key}: must be one of ${field.options.join(", ")}`);
         else data[key] = value.trim();

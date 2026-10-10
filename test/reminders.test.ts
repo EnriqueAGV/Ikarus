@@ -165,8 +165,8 @@ describe("reminder flow", () => {
           { type: "text", parameter_name: "nombre", text: "Ana" },
           { type: "text", parameter_name: "consultorio", text: "Consultorio San Benito" },
           { type: "text", parameter_name: "doctor", text: "Dra. Ana Ruiz" },
-          { type: "text", parameter_name: "fecha", text: "miércoles 14 de octubre" },
-          { type: "text", parameter_name: "hora", text: "10:00" },
+          { type: "text", parameter_name: "fecha", text: "14-10-2026" },
+          { type: "text", parameter_name: "hora", text: "10:00 AM" },
         ],
       },
       { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: `confirm:${a.id}` }] },
@@ -182,7 +182,7 @@ describe("reminder flow", () => {
     // The conversation shows what the client received.
     const outbound = await db.select().from(schema.messages).orderBy(schema.messages.createdAt);
     expect(outbound[0].body).toBe(
-      "Hola Ana, le recordamos su cita en Consultorio San Benito con Dra. Ana Ruiz el miércoles 14 de octubre a las 10:00. ¿Nos confirma su asistencia?",
+      "Hola Ana, le recordamos su cita en Consultorio San Benito con Dra. Ana Ruiz el 14-10-2026 a las 10:00 AM. ¿Nos confirma su asistencia?",
     );
   });
 

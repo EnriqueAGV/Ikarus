@@ -1,3 +1,6 @@
+import { TimeInput } from "@/components/time-input";
+import { displayDate, displayTime } from "@/lib/dates";
+import { DateInput } from "@/components/date-input";
 import Link from "next/link";
 import { requireBusinessManager } from "@/lib/auth";
 import { bankDetails, formatMoney, invoicesFor, standing, transferReference } from "@/lib/billing";
@@ -158,9 +161,9 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
                 </label>
                 {[1, 2].map((n) => (
                   <span key={n} className="flex items-center gap-1">
-                    <input type="time" name={`d${d}_s${n}`} defaultValue={hhmm(day[n - 1]?.startTime ?? (n === 1 ? "09:00" : null))} className={input} />
+                    <TimeInput name={`d${d}_s${n}`} ariaLabel={`${weekdayLabel[d]}: apertura ${n}`} defaultValue={hhmm(day[n - 1]?.startTime ?? (n === 1 ? "09:00" : null))} className={input} />
                     –
-                    <input type="time" name={`d${d}_e${n}`} defaultValue={hhmm(day[n - 1]?.endTime ?? (n === 1 ? "18:00" : null))} className={input} />
+                    <TimeInput name={`d${d}_e${n}`} ariaLabel={`${weekdayLabel[d]}: cierre ${n}`} defaultValue={hhmm(day[n - 1]?.endTime ?? (n === 1 ? "18:00" : null))} className={input} />
                   </span>
                 ))}
               </div>
@@ -182,9 +185,9 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             {exceptions.map((e) => (
               <li key={e.id} className="flex items-center justify-between gap-2 px-3 py-2">
                 <span>
-                  <span className="inline-block first-letter:uppercase">{formatLocal(new Date(`${e.date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM yyyy")}</span>
+                  <span className="inline-block first-letter:uppercase">{formatLocal(new Date(`${e.date}T12:00:00Z`), "UTC", "dd-MM-yyyy")}</span>
                   {" · "}
-                  {e.startTime ? `${hhmm(e.startTime)}–${hhmm(e.endTime)}` : "Cerrado"}
+                  {e.startTime ? `${displayTime(e.startTime)}–${displayTime(e.endTime)}` : "Cerrado"}
                   {e.note ? ` · ${e.note}` : ""}
                 </span>
                 <form action={removeExceptionAction.bind(null, id, doctor.id, e.id)}>
@@ -196,14 +199,14 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
         )}
         <form action={addExceptionAction.bind(null, id, doctor.id)} className="flex flex-wrap items-end gap-2 rounded-2xl border border-dashed p-4">
           <Field label="Fecha">
-            <input type="date" name="date" required className={input} />
+            <DateInput name="date" required className={input} />
           </Field>
           <label className="flex items-center gap-1 pb-1.5 text-sm">
             <input type="checkbox" name="closed" defaultChecked /> Cerrado
           </label>
           <Field label="o abre de">
             <span className="flex items-center gap-1">
-              <input type="time" name="startTime" className={input} />–<input type="time" name="endTime" className={input} />
+              <TimeInput name="startTime" ariaLabel="Hora de apertura" className={input} />–<TimeInput name="endTime" ariaLabel="Hora de cierre" className={input} />
             </span>
           </Field>
           <Field label="Nota">
@@ -345,7 +348,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
           {pendingInvoices.map((inv) => (
             <div key={inv.id} className="notice notice-warn">
               <p className="font-medium">
-                Factura {transferReference(inv)}: {formatMoney(inv.amountCents, inv.currency)}, del {inv.periodStart} al {inv.periodEnd}
+                Factura {transferReference(inv)}: {formatMoney(inv.amountCents, inv.currency)}, del {displayDate(inv.periodStart)} al {displayDate(inv.periodEnd)}
               </p>
               <p className="mt-1">
                 Transfiera el monto y escriba <span className="font-mono">{transferReference(inv)}</span> como referencia o
@@ -359,7 +362,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
               {paidInvoices.map((inv) => (
                 <li key={inv.id} className="flex justify-between gap-2 py-1">
                   <span>
-                    {transferReference(inv)} · del {inv.periodStart} al {inv.periodEnd}
+                    {transferReference(inv)} · del {displayDate(inv.periodStart)} al {displayDate(inv.periodEnd)}
                   </span>
                   <span className="text-neutral-500">{formatMoney(inv.amountCents, inv.currency)} · Pagada</span>
                 </li>

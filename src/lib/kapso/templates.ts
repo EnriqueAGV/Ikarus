@@ -11,7 +11,7 @@ const example = {
   consultorio: "Consultorio Médico San Benito",
   doctor: "Dra. Ana López",
   fecha: "viernes 10 de octubre",
-  hora: "10:30",
+  hora: "10:30 AM",
 };
 
 type Param = keyof typeof example;

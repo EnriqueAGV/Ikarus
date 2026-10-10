@@ -36,7 +36,7 @@ export default async function NewPrescriptionPage({ params, searchParams }: Page
           <select name="appointmentId" defaultValue={visits[0]?.id ?? ""} className={`${input} max-w-md`}>
             {visits.map((v) => (
               <option key={v.id} value={v.id}>
-                {formatLocal(v.startsAt, tz, "EEE d MMM yyyy, HH:mm")} · {v.serviceName}
+                {formatLocal(v.startsAt, tz, "dd-MM-yyyy, h:mm a")} · {v.serviceName}
               </option>
             ))}
             <option value="">Sin cita</option>

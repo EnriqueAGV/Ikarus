@@ -26,7 +26,7 @@ export default async function InboxPage({ params, searchParams }: PageProps<"/ap
   return <div className="dashboard-view">
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div><h2 className="dashboard-heading">Por responder</h2><p className="mt-1 text-sm text-muted">Conversaciones que necesitan atención del equipo.</p></div>
-      <div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted">Actualizado {formatLocal(now, business.timezone, "HH:mm")}</span><RefreshButton /></div>
+      <div className="flex flex-wrap items-center gap-3"><span className="text-xs text-muted">Actualizado {formatLocal(now, business.timezone, "h:mm a")}</span><RefreshButton /></div>
     </header>
     <nav aria-label="Estado de las conversaciones" className="section-tabs">
       <Link aria-current={status === "needs_reply" ? "page" : undefined} href={base}>Pendientes <span className="badge">{counts.needsReply}</span></Link>
@@ -43,7 +43,7 @@ export default async function InboxPage({ params, searchParams }: PageProps<"/ap
           <p className="mt-2 truncate text-sm">{lastMessage ? `${lastMessage.direction === "outbound" ? "Último envío: " : ""}${lastMessage.body ?? "Mensaje adjunto"}` : "Sin mensajes"}</p>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
             {client.attentionSince && <span>Pendiente desde hace {waited(client.attentionSince, now)}</span>}
-            {lastMessage && <span>Última actividad {formatLocal(lastMessage.createdAt, business.timezone, "d MMM, HH:mm")}</span>}
+            {lastMessage && <span>Última actividad {formatLocal(lastMessage.createdAt, business.timezone, "dd-MM-yyyy, h:mm a")}</span>}
             <span>{eligibility.reason === "not_connected" ? "WhatsApp desconectado" : eligibility.reason === "no_whatsapp" ? "Sin WhatsApp" : eligibility.reason ? "Ventana cerrada · llamar al contacto" : "Respuesta por WhatsApp disponible"}</span>
           </div>
         </div><Link className="btn-secondary" href={href}>Abrir conversación <span aria-hidden="true">→</span></Link>
