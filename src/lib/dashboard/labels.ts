@@ -77,6 +77,16 @@ export const settingsErrorLabel: Record<string, string> = {
   no_whatsapp: "Este paciente no tiene WhatsApp registrado.",
   invalid_phone: "El número no es válido. Escribe 8 dígitos o el número con código de país.",
   name_required_patient: "Escribe el nombre del paciente.",
+  slot_unavailable: "Ese horario ya no está libre. Elige otro.",
+  unknown_service: "Ese servicio no existe o no está activo.",
+  invalid_block: "Revisa el horario a bloquear: la hora final debe ser después de la inicial.",
+};
+
+// Why a patient was not told on WhatsApp about a booking made here.
+export const noticeLabel: Record<string, string> = {
+  no_whatsapp: "no tiene WhatsApp registrado.",
+  not_connected: "el WhatsApp del consultorio no está conectado.",
+  template_not_approved: "Meta aún no aprueba el mensaje de cita agendada.",
 };
 
 export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MMM, HH:mm") {

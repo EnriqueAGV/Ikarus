@@ -104,7 +104,7 @@ export default async function AdminBusinessPage({
           <h2 className="font-medium">Plantillas de mensajes</h2>
           {business.wabaId && (
             <form action={syncTemplatesAction.bind(null, business.id)}>
-              <button className="text-sm underline">Actualizar estado</button>
+              <button className="text-sm underline">Crear faltantes y actualizar estado</button>
             </form>
           )}
         </div>

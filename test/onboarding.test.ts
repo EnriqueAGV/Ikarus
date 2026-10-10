@@ -146,7 +146,7 @@ describe("Kapso project webhook", () => {
     expect(res.status).toBe(401);
   });
 
-  it("connects the number, registers the message webhook and creates the three templates once", async () => {
+  it("connects the number, registers the message webhook and creates the templates once", async () => {
     const business = await newBusiness();
     kapso.calls.length = 0;
     const payload = { phone_number_id: PHONE_ID, customer: { id: CUSTOMER_ID } };
@@ -181,6 +181,7 @@ describe("Kapso project webhook", () => {
 
     const templateCalls = kapso.calls.filter((c) => c.path.endsWith("/message_templates"));
     expect(templateCalls.map((c) => (c.body as { name: string }).name).sort()).toEqual([
+      "praxia_cita_agendada",
       "praxia_cita_cancelada",
       "praxia_recordatorio",
       "praxia_seguimiento",

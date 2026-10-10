@@ -228,7 +228,15 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         </section>
 
         <section className="rounded-md border p-4">
-          <h3 className="mb-3 font-medium">Citas</h3>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="font-medium">Citas</h3>
+            <Link
+              href={`/app/${businessId}/appointments/new?clientId=${client.id}`}
+              className="rounded-md border px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            >
+              Agendar cita
+            </Link>
+          </div>
           {appointments.length === 0 ? (
             <p className="text-sm text-neutral-500">Sin citas todavía.</p>
           ) : (

@@ -2,12 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { db, schema } from "@/db";
 import { requireSuperAdmin } from "@/lib/auth";
 import { encryptExistingRows } from "@/lib/encrypt-backfill";
 import {
   createBusiness,
   ensureProjectWebhook,
+  ensureTemplates,
   issueSetupLink,
   syncTemplates,
 } from "@/lib/onboarding";
@@ -45,6 +48,9 @@ export async function newSetupLinkAction(businessId: string) {
 
 export async function syncTemplatesAction(businessId: string) {
   await requireSuperAdmin();
+  // Templates added to Praxia since the clinic connected are created first.
+  const [business] = await db.select().from(schema.businesses).where(eq(schema.businesses.id, businessId));
+  if (business) await ensureTemplates(business);
   await syncTemplates(businessId);
   revalidatePath(`/admin/businesses/${businessId}`);
 }

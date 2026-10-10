@@ -63,7 +63,7 @@ export async function availableSlots(business: Business, q: SlotQuery, exec: Exe
   // Busy window: a day before and after the local range covers any timezone.
   const rangeStart = addDays(new Date(`${q.fromDate}T00:00:00Z`), -1);
   const rangeEnd = addDays(new Date(`${q.toDate}T00:00:00Z`), 2);
-  const [rules, exceptions, busy] = await Promise.all([
+  const [rules, exceptions, booked, blocks] = await Promise.all([
     exec
       .select()
       .from(schema.availabilityRules)
@@ -97,7 +97,24 @@ export async function availableSlots(business: Business, q: SlotQuery, exec: Exe
           gt(schema.appointments.endsAt, rangeStart),
         ),
       ),
+    exec
+      .select({
+        practitionerId: schema.timeBlocks.practitionerId,
+        startsAt: schema.timeBlocks.startsAt,
+        endsAt: schema.timeBlocks.endsAt,
+      })
+      .from(schema.timeBlocks)
+      .where(
+        and(
+          eq(schema.timeBlocks.businessId, business.id),
+          inArray(schema.timeBlocks.practitionerId, ids),
+          lt(schema.timeBlocks.startsAt, rangeEnd),
+          gt(schema.timeBlocks.endsAt, rangeStart),
+        ),
+      ),
   ]);
+  // A blocked hour is as busy as a booked one.
+  const busy = [...booked, ...blocks];
 
   const byTime = new Map<number, Slot>();
   for (const { practitioner, durationMin, bufferMin } of offering) {
@@ -213,7 +230,8 @@ export async function upcomingAppointments(businessId: string, clientIds: string
     .orderBy(asc(schema.appointments.startsAt));
 }
 
-async function liveAppointmentOf(tx: Tx, businessId: string, clientIds: string[], appointmentId: string) {
+// clientIds limits it to those patients' appointments; null means any in the clinic.
+async function liveAppointmentOf(tx: Tx, businessId: string, clientIds: string[] | null, appointmentId: string) {
   const [row] = await tx
     .select()
     .from(schema.appointments)
@@ -221,7 +239,7 @@ async function liveAppointmentOf(tx: Tx, businessId: string, clientIds: string[]
       and(
         eq(schema.appointments.id, appointmentId),
         eq(schema.appointments.businessId, businessId),
-        inArray(schema.appointments.clientId, clientIds),
+        clientIds ? inArray(schema.appointments.clientId, clientIds) : undefined,
         inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
       ),
     )
@@ -248,24 +266,42 @@ export async function cancelByClient(businessId: string, clientIds: string | str
 // The old slot is released and the new one booked in one transaction: if the
 // new time is taken, the client keeps the original appointment. The doctor
 // stays the same unless another one is given.
-export async function rescheduleByClient(input: {
+type RescheduleInput = {
   business: Business;
-  // The patients the person writing may act for (everyone on their number).
-  clientIds: string | string[];
   appointmentId: string;
   localStart: string;
   practitionerId?: string | null;
   now?: Date;
-}): Promise<BookResult> {
+};
+
+export function rescheduleByClient(
+  input: RescheduleInput & {
+    // The patients the person writing may act for (everyone on their number).
+    clientIds: string | string[];
+  },
+) {
+  return reschedule(input, [input.clientIds].flat(), "cancelled_by_client");
+}
+
+// The clinic's team moving any appointment, e.g. after a phone call.
+export function rescheduleByBusiness(input: RescheduleInput) {
+  return reschedule(input, null, "cancelled_by_business");
+}
+
+async function reschedule(
+  input: RescheduleInput,
+  clientIds: string[] | null,
+  oldStatus: "cancelled_by_client" | "cancelled_by_business",
+): Promise<BookResult> {
   let old: Appointment | null = null;
   let result: BookResult;
   try {
     result = await db.transaction(async (tx) => {
-      old = await liveAppointmentOf(tx, input.business.id, [input.clientIds].flat(), input.appointmentId);
+      old = await liveAppointmentOf(tx, input.business.id, clientIds, input.appointmentId);
       if (!old) return { ok: false, reason: "not_found" } as const;
       await tx
         .update(schema.appointments)
-        .set({ status: "cancelled_by_client", cancelledAt: new Date(), cancelReason: "rescheduled" })
+        .set({ status: oldStatus, cancelledAt: new Date(), cancelReason: "rescheduled" })
         .where(eq(schema.appointments.id, old.id));
       const booked = await bookInTx(
         tx,

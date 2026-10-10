@@ -17,12 +17,13 @@ import { TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "@/lib/kapso/tem
 
 export const REPLY_WAIT = "2h";
 
-type Kind = "reminder" | "followup" | "cancelled";
+type Kind = "reminder" | "followup" | "cancelled" | "booked";
 type Policy = (typeof schema.reminderEndPolicy.enumValues)[number];
 
 function templateFor(kind: Kind, policy: Policy): TemplateName {
   if (kind === "reminder") return "praxia_recordatorio";
   if (kind === "cancelled") return "praxia_cita_cancelada";
+  if (kind === "booked") return "praxia_cita_agendada";
   // Only warn about a cancellation that will actually happen.
   return policy === "auto_cancel" ? "praxia_seguimiento_aviso" : "praxia_seguimiento";
 }
@@ -134,6 +135,19 @@ export async function autoCancel(appointmentId: string, now = new Date()): Promi
   }
   await deliver(row, "cancelled", now, ["rebook"]);
   return { status: "cancelled", notified: true };
+}
+
+export type NotifyResult = { notified: true } | { notified: false; reason: "no_whatsapp" | "not_connected" | "template_not_approved" };
+
+// Tells the patient (on their number's WhatsApp) about an appointment the
+// clinic's team booked or moved for them.
+export async function notifyBooked(appointmentId: string, now = new Date()): Promise<NotifyResult> {
+  const row = await load(appointmentId);
+  if (!row?.conversation.waPhone) return { notified: false, reason: "no_whatsapp" };
+  if (!row.business.phoneNumberId) return { notified: false, reason: "not_connected" };
+  if (!(await templateApproved(row.business.id, "praxia_cita_agendada"))) return { notified: false, reason: "template_not_approved" };
+  await deliver(row, "booked", now, []);
+  return { notified: true };
 }
 
 // Applies a client's reply to their pending reminders. Tapping "Confirmar"
