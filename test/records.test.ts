@@ -246,6 +246,7 @@ describe("conversations waiting on the team", () => {
       ["Rosa", false, "Con gusto"],
     ]);
     expect(await waitingCount(business.id)).toBe(2);
+    expect(rows[1].lastInboundAt?.getTime()).toBeCloseTo(now - 600_000, -3);
   });
 });
 
