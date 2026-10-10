@@ -181,7 +181,7 @@ describe("booking agent", () => {
     const claude = fakeLlm([
       {
         tools: [
-          { name: "save_client_info", input: { name: "Ana López", answers: [] } },
+          { name: "save_client_info", input: { name: "Ana López", dui: "01234567 8", answers: [] } },
           { name: "find_available_slots", input: { service_id: serviceId, date_from: "2026-10-13", date_to: "2026-10-13" } },
         ],
       },
@@ -207,7 +207,7 @@ describe("booking agent", () => {
     expect(appt).toMatchObject({ clientId: client.id, serviceId, status: "booked" });
     expect(appt.startsAt.toISOString()).toBe("2026-10-13T16:00:00.000Z");
     // The birth date also lands in the record header.
-    expect(await theClient()).toMatchObject({ name: "Ana López", data: { fecha_nacimiento: "1990-05-04" }, dateOfBirth: "1990-05-04" });
+    expect(await theClient()).toMatchObject({ name: "Ana López", dui: "01234567-8", data: { fecha_nacimiento: "1990-05-04" }, dateOfBirth: "1990-05-04" });
     expect(sent.at(-1)).toEqual({ name: "appointment/booked", data: { appointmentId: appt.id, businessId: business.id, clientId: appt.clientId } });
 
     // "escribiendo…" shows on the patient's message first, once for a quick run.
@@ -259,10 +259,30 @@ describe("booking agent", () => {
     expect(String(claude.requests[0].messages[0].content)).toContain("Don't ask when they would like to come");
   });
 
+  it("asks an adult for their DUI before booking, and rejects a malformed one", async () => {
+    await receive("Soy Ana López, quiero una cita");
+    const client = await theClient();
+    await db.update(schema.clients).set({ data: { fecha_nacimiento: "1990-05-04" } });
+    const claude = fakeLlm([
+      { tools: [{ name: "save_client_info", input: { name: "Ana López", dui: "1234", answers: [] } }] },
+      { tools: [{ name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00" } }] },
+      { text: "¿Me confirma su DUI?" },
+    ]);
+    await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+
+    const [saved] = lastToolResults(claude.requests[1]);
+    expect(saved.error).toBe(true);
+    expect(saved.content).toContain("dui: a DUI has 9 digits");
+    expect(lastToolResults(claude.requests[2])[0]).toEqual({ error: true, content: "Collect these first: dui" });
+    expect(await db.select().from(schema.appointments)).toHaveLength(0);
+    // The prompt puts the name and DUI first.
+    expect(String(claude.requests[0].messages[0].content)).toContain("your first message asks for their full name and their DUI");
+  });
+
   it("never books a taken or closed time", async () => {
     await receive("Quiero el martes a las 10");
     const client = await theClient();
-    await db.update(schema.clients).set({ data: { fecha_nacimiento: "1990-05-04" } });
+    await db.update(schema.clients).set({ dui: "01234567-8", data: { fecha_nacimiento: "1990-05-04" } });
     await db.insert(schema.appointments).values({
       businessId: business.id,
       clientId: client.id,
@@ -326,7 +346,7 @@ describe("booking agent", () => {
     await db.insert(schema.availabilityRules).values({ businessId: business.id, practitionerId: secondId, weekday: 2, startTime: "09:00", endTime: "12:00" });
     await receive("Quiero cita con el Dr. Pérez el martes a las 10");
     const client = await theClient();
-    await db.update(schema.clients).set({ data: { fecha_nacimiento: "1990-05-04" } });
+    await db.update(schema.clients).set({ dui: "01234567-8", data: { fecha_nacimiento: "1990-05-04" } });
     const claude = fakeLlm([
       { tools: [{ name: "list_practitioners", input: {} }] },
       {
@@ -418,6 +438,30 @@ describe("booking agent", () => {
 });
 
 describe("when the agent can't answer", () => {
+  it("hands every conversation to the team once the clinic's plan has run out", async () => {
+    await db.update(schema.businesses).set({ paidUntil: "2026-09-01" }).where(eq(schema.businesses.id, business.id));
+    await receive("Hola, quiero una cita");
+    const client = await theClient();
+    const claude = fakeLlm([]);
+    expect(await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client })).toEqual({
+      status: "skipped",
+      reason: "service_stopped",
+    });
+    expect(claude.requests).toHaveLength(0);
+    const sends = kapso.calls.filter((c) => c.path.endsWith("/messages") && !isTyping(c.body));
+    expect(sends).toHaveLength(1);
+    expect((await theClient()).agentPaused).toBe(true);
+  });
+
+  it("answers questions about the clinic from its own information", async () => {
+    await db.update(schema.businesses).set({ faq: "Parqueo gratis frente a la clínica." }).where(eq(schema.businesses.id, business.id));
+    await receive("¿Tienen parqueo?");
+    const claude = fakeLlm([{ text: "Sí, hay parqueo gratis frente a la clínica." }]);
+    await runAgent({ businessId: business.id, clientId: (await theClient()).id, now: NOW, llm: claude.client });
+    const system = String(claude.requests[0].messages[0].content);
+    expect(system).toContain("Clinic information (written by the practice; the only source for questions about it):\nParqueo gratis frente a la clínica.");
+  });
+
   it("sends the holding reply once and hands the conversation to the team", async () => {
     await receive("Si");
     const client = await theClient();

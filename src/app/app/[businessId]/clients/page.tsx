@@ -6,10 +6,11 @@ import { createPatientAction } from "../actions";
 
 export default async function ClientsPage({ params, searchParams }: PageProps<"/app/[businessId]/clients">) {
   const { businessId } = await params;
-  const { q, new: open, recordError } = await searchParams;
+  const { q, new: open, recordError, archived } = await searchParams;
   const { business } = await requireBusinessAccess(businessId);
   const query = typeof q === "string" ? q : "";
-  const rows = await listClients(business.id, query);
+  const showArchived = archived === "1";
+  const rows = await listClients(business.id, query, { archived: showArchived });
   const error = typeof recordError === "string" ? settingsErrorLabel[recordError] ?? "Algo salió mal." : null;
   const input = "rounded-md border px-2 py-1 text-sm";
   const label = "flex flex-col gap-1 text-xs text-neutral-500";
@@ -23,7 +24,14 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
           placeholder="Buscar por nombre o teléfono"
           className="w-full max-w-sm rounded-md border px-3 py-1.5 text-sm"
         />
+        {showArchived && <input type="hidden" name="archived" value="1" />}
         <button className="rounded-md border px-3 py-1.5 text-sm">Buscar</button>
+        <Link
+          href={showArchived ? `/app/${business.id}/clients` : `/app/${business.id}/clients?archived=1`}
+          className="self-center whitespace-nowrap text-sm text-neutral-500 hover:underline"
+        >
+          {showArchived ? "Ver activos" : "Ver archivados"}
+        </Link>
       </form>
       <details open={open === "1"} className="rounded-md border p-4">
         <summary className="cursor-pointer text-sm font-medium">Nuevo paciente</summary>
@@ -60,7 +68,7 @@ export default async function ClientsPage({ params, searchParams }: PageProps<"/
       </details>
       {rows.length === 0 ? (
         <p className="rounded-md border p-6 text-center text-sm text-neutral-500">
-          {query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp, o puedes registrarlos en Nuevo paciente."}
+          {showArchived ? "No hay pacientes archivados." : query ? "Ningún paciente coincide con la búsqueda." : "Aún no hay pacientes. Aparecen cuando escriben por WhatsApp, o puedes registrarlos en Nuevo paciente."}
         </p>
       ) : (
         <ul className="divide-y rounded-md border">

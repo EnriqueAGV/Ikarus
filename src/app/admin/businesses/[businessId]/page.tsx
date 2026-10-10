@@ -4,7 +4,26 @@ import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { CopyButton } from "@/components/copy-button";
 import { requireSuperAdmin } from "@/lib/auth";
-import { newSetupLinkAction, syncTemplatesAction } from "../../actions";
+import { bankDetails, formatMoney, invoicesFor, standing, transferReference } from "@/lib/billing";
+import { standingLabel } from "@/lib/billing-labels";
+import {
+  issueInvoiceAction,
+  markPaidAction,
+  newSetupLinkAction,
+  setPriceAction,
+  setSuspendedAction,
+  setTrialAction,
+  syncTemplatesAction,
+  voidInvoiceAction,
+} from "../../actions";
+
+const billingErrorLabel: Record<string, string> = {
+  no_price: "Primero pon el precio mensual.",
+  invalid_price: "El precio no es válido.",
+  invalid_days: "Los días de prueba deben estar entre 0 y 365.",
+  pending_exists: "Ya hay una factura pendiente; márcala pagada o anúlala primero.",
+  not_found: "Esa factura ya no está pendiente.",
+};
 
 const statusLabel = {
   invited: "Esperando conexión de WhatsApp",
@@ -31,9 +50,11 @@ const dateFmt = new Intl.DateTimeFormat("es", { dateStyle: "medium", timeStyle: 
 
 export default async function AdminBusinessPage({
   params,
+  searchParams,
 }: PageProps<"/admin/businesses/[businessId]">) {
   await requireSuperAdmin();
   const { businessId } = await params;
+  const { billingError } = await searchParams;
 
   const [business] = await db
     .select()
@@ -56,6 +77,10 @@ export default async function AdminBusinessPage({
   ]);
 
   const current = links.find((l) => l.status === "pending" && l.expiresAt > new Date());
+  const invoices = await invoicesFor(business.id);
+  const billing = standing(business);
+  const billingMessage = typeof billingError === "string" ? billingErrorLabel[billingError] ?? "Algo salió mal." : null;
+  const bank = bankDetails();
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
@@ -119,6 +144,75 @@ export default async function AdminBusinessPage({
                   {templateStatusLabel[t.status]}
                   {t.rejectedReason ? ` · ${t.rejectedReason}` : ""}
                 </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section id="billing" className="mb-8 flex flex-col gap-3 rounded-md border p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="font-medium">Plan y pagos</h2>
+          <span className="text-sm">{standingLabel(billing, business.timezone)}</span>
+        </div>
+        {billingMessage && <p className="text-sm text-red-600">{billingMessage}</p>}
+        <div className="flex flex-wrap gap-4 text-sm">
+          <form action={setPriceAction.bind(null, business.id)} className="flex items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Precio mensual (USD)
+              <input
+                name="price"
+                inputMode="decimal"
+                defaultValue={business.monthlyPriceCents ? (business.monthlyPriceCents / 100).toFixed(2) : ""}
+                className="w-28 rounded-md border px-2 py-1 text-sm"
+              />
+            </label>
+            <button className="rounded-md border px-2 py-1">Guardar</button>
+          </form>
+          <form action={setTrialAction.bind(null, business.id)} className="flex items-end gap-2">
+            <label className="flex flex-col gap-1 text-xs text-neutral-500">
+              Prueba gratis: días desde hoy
+              <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-24 rounded-md border px-2 py-1 text-sm" />
+            </label>
+            <button className="rounded-md border px-2 py-1">Dar prueba</button>
+          </form>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <form action={issueInvoiceAction.bind(null, business.id)}>
+            <button className="rounded-md bg-brand px-3 py-1.5 text-white hover:bg-brand-hover">Emitir factura del próximo mes</button>
+          </form>
+          <form action={setSuspendedAction.bind(null, business.id, !business.billingSuspended)}>
+            <button className="text-sm underline">{business.billingSuspended ? "Reactivar servicio" : "Suspender servicio"}</button>
+          </form>
+        </div>
+        {!bank && (
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            Falta BILLING_BANK_DETAILS en las variables de entorno: el consultorio no verá a qué cuenta transferir.
+          </p>
+        )}
+        {invoices.length > 0 && (
+          <ul className="divide-y text-sm">
+            {invoices.map((inv) => (
+              <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span>
+                  <span className="font-mono">{transferReference(inv)}</span> · {inv.periodStart} a {inv.periodEnd} ·{" "}
+                  {formatMoney(inv.amountCents, inv.currency)}
+                </span>
+                {inv.status === "pending" ? (
+                  <span className="flex items-center gap-2">
+                    <form action={markPaidAction.bind(null, business.id, inv.id)} className="flex items-center gap-1">
+                      <input name="reference" placeholder="N.º de transferencia" className="w-40 rounded-md border px-2 py-1 text-xs" />
+                      <button className="rounded-md border px-2 py-1 text-xs">Marcar pagada</button>
+                    </form>
+                    <form action={voidInvoiceAction.bind(null, business.id, inv.id)}>
+                      <button className="text-xs text-neutral-500 underline">Anular</button>
+                    </form>
+                  </span>
+                ) : (
+                  <span className="text-neutral-500">
+                    {inv.status === "paid" ? `Pagada${inv.paymentReference ? ` · ${inv.paymentReference}` : ""}` : "Anulada"}
+                  </span>
+                )}
               </li>
             ))}
           </ul>

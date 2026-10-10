@@ -11,16 +11,25 @@ import {
   formatPhone,
   settingsErrorLabel,
 } from "@/lib/dashboard/labels";
-import { listNotes } from "@/lib/dashboard/notes";
+import { appointmentsForNotes, listNotes } from "@/lib/dashboard/notes";
 import { logChartView, recentAccess } from "@/lib/dashboard/patients";
 import { listIntakeFields } from "@/lib/dashboard/settings";
-import { saveClinicalAction, saveDemographicsAction, setAgentPausedAction, staffReplyAction } from "../../actions";
+import { ConfirmButton } from "@/components/confirm-button";
+import {
+  archivePatientAction,
+  restorePatientAction,
+  saveClinicalAction,
+  saveDemographicsAction,
+  setAgentPausedAction,
+  staffReplyAction,
+} from "../../actions";
 import { startNoteAction } from "../../notes-actions";
 
 const savedLabel: Record<string, string> = {
   datos: "Datos guardados.",
   clinico: "Datos clínicos guardados.",
   nuevo: "Paciente registrado.",
+  restaurado: "Paciente restaurado.",
 };
 
 export default async function ClientPage({ params, searchParams }: PageProps<"/app/[businessId]/clients/[clientId]">) {
@@ -36,13 +45,24 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   ]);
   if (!detail) notFound();
   await logChartView(membership, clientId);
+  const writes = can(membership, "notes.write") && membership.practitionerId !== null;
   const [access, notes] = clinical ? await Promise.all([recentAccess(business.id, clientId), listNotes(membership, clientId)]) : [[], []];
+  const visits = writes ? await appointmentsForNotes(membership, clientId) : [];
+  // Notes grouped by the appointment they belong to, newest visit first.
+  const byVisit = new Map<string, typeof notes>();
+  for (const n of notes) byVisit.set(n.appointmentId ?? "none", [...(byVisit.get(n.appointmentId ?? "none") ?? []), n]);
   const { client, conversation, others, appointments, messages } = detail;
   const shared = conversation.id !== client.id;
   const tz = business.timezone;
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "Algo salió mal." : null;
   const recordError = typeof sp.recordError === "string" ? settingsErrorLabel[sp.recordError] ?? "Algo salió mal." : null;
-  const saved = typeof sp.saved === "string" ? savedLabel[sp.saved] : null;
+  const archivedNow = typeof sp.archived === "string" ? Number(sp.archived) : null;
+  const saved =
+    archivedNow !== null
+      ? `Paciente archivado.${archivedNow > 0 ? ` Se cancelaron ${archivedNow === 1 ? "1 cita próxima" : `${archivedNow} citas próximas`}.` : ""}`
+      : typeof sp.saved === "string"
+        ? savedLabel[sp.saved]
+        : null;
   const input = "rounded-md border px-2 py-1 text-sm";
   const label = "flex flex-col gap-1 text-xs text-neutral-500";
 
@@ -94,6 +114,17 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         )}
       </header>
 
+      {client.archivedAt && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <span>
+            Paciente archivado el {formatLocal(client.archivedAt, tz, "d 'de' MMMM yyyy")}. No aparece en Pacientes ni lo ve el
+            asistente.
+          </span>
+          <form action={restorePatientAction.bind(null, business.id, client.id)}>
+            <button className="rounded-md border bg-white px-3 py-1 text-sm dark:bg-neutral-900">Restaurar</button>
+          </form>
+        </div>
+      )}
       {recordError && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{recordError}</p>}
       {saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{saved}</p>}
 
@@ -180,32 +211,63 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
 
       {clinical && (
         <section id="notas" className="rounded-md border p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-medium">Notas clínicas</h3>
-            {can(membership, "notes.write") && membership.practitionerId && (
-              <form action={startNoteAction.bind(null, business.id, client.id, null)}>
-                <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Nueva nota</button>
-              </form>
-            )}
+            {writes &&
+              (visits.length > 0 ? (
+                <form action={startNoteAction.bind(null, business.id, client.id, null)} className="flex items-center gap-2">
+                  <select name="appointmentId" defaultValue={visits[0].id} className={input} aria-label="Cita">
+                    {visits.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {formatLocal(v.startsAt, tz, "EEE d MMM yyyy, HH:mm")} · {v.serviceName}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Nueva nota</button>
+                </form>
+              ) : (
+                <span className="text-sm text-neutral-500">
+                  Cada nota va con una cita.{" "}
+                  <Link href={`/app/${business.id}/appointments/new?clientId=${client.id}`} className="text-brand hover:underline">
+                    Agenda una
+                  </Link>{" "}
+                  para escribirla.
+                </span>
+              ))}
           </div>
           {notes.length === 0 ? (
             <p className="text-sm text-neutral-500">Sin notas todavía.</p>
           ) : (
-            <ul className="divide-y text-sm">
-              {notes.map((n) => (
-                <li key={n.id}>
-                  <Link href={`/app/${business.id}/clients/${client.id}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
-                    <span>
-                      {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
-                      <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
-                      {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
-                      {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
-                    </span>
-                    {n.status === "draft" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">Sin firmar</span>}
-                  </Link>
-                </li>
+            <div className="flex flex-col gap-4">
+              {[...byVisit.entries()].map(([visit, group]) => (
+                <div key={visit}>
+                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    {group[0].appointmentStartsAt ? (
+                      <span className="capitalize">
+                        Cita del {formatLocal(group[0].appointmentStartsAt, tz, "EEE d MMM yyyy, HH:mm")} · {group[0].serviceName}
+                      </span>
+                    ) : (
+                      "Sin cita"
+                    )}
+                  </h4>
+                  <ul className="divide-y text-sm">
+                    {group.map((n) => (
+                      <li key={n.id}>
+                        <Link href={`/app/${business.id}/clients/${client.id}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
+                          <span>
+                            {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
+                            <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
+                            {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
+                            {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
+                          </span>
+                          {n.status === "draft" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">Sin firmar</span>}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </section>
       )}
@@ -309,6 +371,24 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {!client.archivedAt && (
+        <section className="rounded-md border p-4">
+          <h3 className="mb-1 font-medium">Archivar paciente</h3>
+          <p className="mb-3 text-sm text-neutral-500">
+            Deja de aparecer en Pacientes y el asistente ya no lo ve. Sus citas próximas se cancelan. El expediente no se
+            borra, porque debe conservarse, y puedes restaurarlo cuando quieras.
+          </p>
+          <form action={archivePatientAction.bind(null, business.id, client.id)}>
+            <ConfirmButton
+              message="¿Archivar a este paciente? Sus citas próximas se cancelarán."
+              className="rounded-md border px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Archivar paciente
+            </ConfirmButton>
+          </form>
         </section>
       )}
     </div>

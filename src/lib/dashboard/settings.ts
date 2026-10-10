@@ -307,18 +307,27 @@ export type ReminderEndPolicy = (typeof schema.reminderEndPolicy.enumValues)[num
 
 export async function updateBusinessSettings(
   businessId: string,
-  input: { reminderLeadHours: number; agentInstructions: string; reminderEndPolicy?: ReminderEndPolicy },
+  input: {
+    reminderLeadHours: number;
+    agentInstructions: string;
+    reminderEndPolicy?: ReminderEndPolicy;
+    faq?: string;
+    noShowFollowUp?: boolean;
+  },
 ) {
   if (!Number.isInteger(input.reminderLeadHours) || input.reminderLeadHours < 1 || input.reminderLeadHours > 168) {
     throw new SettingsError("invalid_reminder_hours");
   }
   if (input.agentInstructions.length > 4000) throw new SettingsError("instructions_too_long");
+  if ((input.faq ?? "").length > 4000) throw new SettingsError("faq_too_long");
   await db
     .update(schema.businesses)
     .set({
       reminderLeadHours: input.reminderLeadHours,
       agentInstructions: input.agentInstructions.trim() || null,
       ...(input.reminderEndPolicy ? { reminderEndPolicy: input.reminderEndPolicy } : {}),
+      ...(input.faq !== undefined ? { faq: input.faq.trim() || null } : {}),
+      ...(input.noShowFollowUp !== undefined ? { noShowFollowUp: input.noShowFollowUp } : {}),
     })
     .where(eq(schema.businesses.id, businessId));
 }

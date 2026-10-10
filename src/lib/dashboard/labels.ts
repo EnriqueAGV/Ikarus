@@ -55,6 +55,7 @@ export const settingsErrorLabel: Record<string, string> = {
   label_required: "La pregunta necesita un texto.",
   choice_needs_options: "Una pregunta de opciones necesita al menos dos opciones.",
   invalid_reminder_hours: "El recordatorio debe enviarse entre 1 y 168 horas antes.",
+  faq_too_long: "La información del consultorio es demasiado larga (máximo 4000 caracteres).",
   instructions_too_long: "Las instrucciones son demasiado largas (máximo 4000 caracteres).",
   invalid_email: "Correo no válido.",
   invalid_dui: "El DUI debe tener 9 dígitos (00000000-0).",
@@ -65,7 +66,7 @@ export const settingsErrorLabel: Record<string, string> = {
   empty_note: "Escribe algo en la nota antes de firmarla.",
   unknown_code: "Uno de los diagnósticos no es un código CIE-10 válido.",
   invalid_vitals: "Revisa los signos vitales: algún valor no es válido.",
-  unknown_appointment: "Esa cita no es de este paciente.",
+  unknown_appointment: "Elige una cita del paciente que ya empezó o empieza pronto, y que no esté cancelada.",
   empty_addendum: "Escribe el texto de la adenda.",
   not_found: "No se encontró.",
   last_manager: "El consultorio debe tener al menos una persona que lo administre.",
@@ -87,6 +88,7 @@ export const noticeLabel: Record<string, string> = {
   no_whatsapp: "no tiene WhatsApp registrado.",
   not_connected: "el WhatsApp del consultorio no está conectado.",
   template_not_approved: "Meta aún no aprueba el mensaje de cita agendada.",
+  service_stopped: "el asistente está detenido porque el plan del consultorio venció.",
 };
 
 export function formatLocal(instant: Date, timezone: string, pattern = "EEE d MMM, HH:mm") {
@@ -105,6 +107,8 @@ export const accessActionLabel = {
   sign_note: "Firmó una nota",
   add_addendum: "Agregó una adenda",
   print_note: "Imprimió una nota",
+  archive_patient: "Archivó al paciente",
+  restore_patient: "Restauró al paciente",
 } as const;
 
 export const vitalsLabel = {

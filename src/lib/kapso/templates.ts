@@ -109,6 +109,19 @@ export const TEMPLATES = [
       ),
     ],
   },
+  // Sent when the team marks an appointment as a no-show, if the clinic wants it.
+  {
+    name: "praxia_no_asistio",
+    language: TEMPLATE_LANGUAGE,
+    category: "UTILITY",
+    parameter_format: "NAMED",
+    components: [
+      body(
+        "Hola {{nombre}}, le esperábamos en {{consultorio}} el {{fecha}}. Si desea una nueva cita, responda a este mensaje y con gusto le buscamos un horario.",
+        ["nombre", "consultorio", "fecha"],
+      ),
+    ],
+  },
 ] as const;
 
 export type TemplateName = (typeof TEMPLATES)[number]["name"];

@@ -451,6 +451,55 @@ describe("patients registered by hand", () => {
     expect((await patients.recentAccess(business.id, son)).map((l) => l.action)).toEqual(["edit_chart"]);
   });
 
+  it("archives a patient: hidden everywhere, upcoming appointments cancelled, and restorable", async () => {
+    const luz = await assistant();
+    const son = await patients.createPatient(luz, { ...blank, name: "Mateo", phone: "5215511112222", dateOfBirth: "2018-03-01" }, NOW);
+    const { id: serviceId } = await settings.createService(business.id, { name: "Consulta", durationMin: 30, bufferMin: 0, active: true });
+    const later = new Date(NOW.getTime() + 2 * 86_400_000);
+    const earlier = new Date(NOW.getTime() - 2 * 86_400_000);
+    const appt = (startsAt: Date) => ({
+      businessId: business.id,
+      clientId: son,
+      serviceId,
+      practitionerId: doctorId,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + 1_800_000),
+    });
+    const [upcoming] = await db.insert(schema.appointments).values(appt(later)).returning();
+    const [past] = await db.insert(schema.appointments).values({ ...appt(earlier), status: "completed" }).returning();
+
+    expect(await patients.archivePatient(luz, son, NOW)).toEqual({ cancelled: 1 });
+    const status = async (id: string) => (await db.select().from(schema.appointments).where(eq(schema.appointments.id, id)))[0].status;
+    expect(await status(upcoming.id)).toBe("cancelled_by_business");
+    expect(await status(past.id)).toBe("completed");
+    expect((await dashboard.listClients(business.id)).map((r) => r.client.name)).toEqual(["Ana"]);
+    expect((await dashboard.listClients(business.id, "", { archived: true })).map((r) => r.client.name)).toEqual(["Mateo"]);
+    const { household } = await import("@/lib/household");
+    expect((await household(business.id, clientId)).map((p) => p.name)).toEqual(["Ana"]);
+    // The record is still there, with who archived it.
+    expect((await dashboard.getClientDetail(business.id, son))?.client.archivedAt).toEqual(NOW);
+    expect((await patients.recentAccess(business.id, son)).map((l) => l.action)).toContain("archive_patient");
+
+    await patients.restorePatient(luz, son);
+    expect((await dashboard.listClients(business.id)).map((r) => r.client.name).sort()).toEqual(["Ana", "Mateo"]);
+    expect((await household(business.id, clientId)).map((p) => p.name)).toEqual(["Ana", "Mateo"]);
+
+    const [other] = await db.insert(schema.businesses).values({ name: "Otra" }).returning();
+    await expect(patients.archivePatient({ ...luz, business: { id: other.id } }, son, NOW)).rejects.toThrow("not_found");
+  });
+
+  it("brings back an archived holder who writes again", async () => {
+    const luz = await assistant();
+    await patients.archivePatient(luz, clientId, NOW);
+    const { storeInbound } = await import("@/lib/messaging/inbound");
+    await storeInbound({
+      phone_number_id: PHONE_ID,
+      message: { id: "wamid.back", from: "5215511112222", type: "text", text: { body: "Hola de nuevo" } },
+    });
+    const [ana] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(ana.archivedAt).toBeNull();
+  });
+
   it("validates the name and phone", async () => {
     const luz = await assistant();
     await expect(patients.createPatient(luz, { ...blank, name: " ", phone: null }, NOW)).rejects.toThrow("name_required_patient");

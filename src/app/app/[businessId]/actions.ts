@@ -28,9 +28,10 @@ import {
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
 import { addTimeBlock, AgendaError, bookForPatient, moveAppointment, removeTimeBlock, type StaffBookingResult } from "@/lib/dashboard/agenda";
-import { createPatient, PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
+import { archivePatient, createPatient, PatientError, restorePatient, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
 import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { formatLocal } from "@/lib/dashboard/labels";
+import { notifyNoShow } from "@/lib/reminders";
 import { sendStaffReply } from "@/lib/messaging/staff";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -61,7 +62,11 @@ async function settingsChange(
 
 export async function appointmentAction(businessId: string, appointmentId: string, action: BusinessAction) {
   await requireBusinessAccess(businessId);
-  await updateAppointmentByBusiness(businessId, appointmentId, action);
+  const updated = await updateAppointmentByBusiness(businessId, appointmentId, action);
+  // Best effort: the no-show is recorded even if the message can't go out.
+  if (updated && action === "no_show") {
+    await notifyNoShow(updated.id).catch((err) => console.error("no-show follow-up failed", err));
+  }
   revalidatePath(`/app/${businessId}`, "layout");
 }
 
@@ -219,6 +224,25 @@ export async function createPatientAction(businessId: string, form: FormData) {
   redirect(`/app/${businessId}/clients/${id}?saved=nuevo`);
 }
 
+export async function archivePatientAction(businessId: string, clientId: string) {
+  const membership = await requireBusinessAccess(businessId);
+  let outcome: string;
+  try {
+    const { cancelled } = await archivePatient(membership, clientId);
+    outcome = `archived=${cancelled}`;
+  } catch (err) {
+    if (!(err instanceof PatientError)) throw err;
+    outcome = `recordError=${err.code}`;
+  }
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}/clients/${clientId}?${outcome}`);
+}
+
+export async function restorePatientAction(businessId: string, clientId: string) {
+  const membership = await requireBusinessAccess(businessId);
+  await patientChange(businessId, clientId, "restaurado", () => restorePatient(membership, clientId));
+}
+
 export async function saveHoursAction(businessId: string, practitionerId: string, form: FormData) {
   const rules: WeeklyRule[] = [];
   for (let weekday = 0; weekday < 7; weekday++) {
@@ -317,6 +341,8 @@ export async function saveGeneralAction(businessId: string, form: FormData) {
       reminderLeadHours: int(form, "reminderLeadHours"),
       agentInstructions: str(form, "agentInstructions"),
       reminderEndPolicy: form.get("reminderEndPolicy") === "auto_cancel" ? "auto_cancel" : "escalate",
+      faq: str(form, "faq"),
+      noShowFollowUp: checked(form, "noShowFollowUp"),
     }),
   );
 }

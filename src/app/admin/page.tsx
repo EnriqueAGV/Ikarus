@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { SignOutButton } from "@/components/signout-button";
 import { listMyBusinesses, requireSuperAdmin } from "@/lib/auth";
+import { standing } from "@/lib/billing";
+import { standingLabel } from "@/lib/billing-labels";
 import { encryptExistingAction, registerProjectWebhookAction } from "./actions";
 
 const statusLabel = {
@@ -54,6 +56,7 @@ export default async function AdminPage({ searchParams }: PageProps<"/admin">) {
               <span className="text-sm text-neutral-500">
                 {statusLabel[b.status]}
                 {b.displayPhone ? ` · ${b.displayPhone}` : ""}
+                <span className="block text-right text-xs">{standingLabel(standing(b), b.timezone)}</span>
               </span>
             </li>
           ))}

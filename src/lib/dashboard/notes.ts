@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
-import type { Vitals } from "@/db/schema";
+import { LIVE_APPOINTMENT_STATUSES, type Vitals } from "@/db/schema";
 import { isCode } from "@/lib/cie10";
 import { can } from "@/lib/permissions";
 import type { Actor } from "./patients";
@@ -106,6 +106,33 @@ async function log(
   });
 }
 
+// Appointments a note can be written for: not cancelled, and already started
+// or starting within two hours (the doctor may open it as the patient arrives).
+const NOTE_STATUSES = [...LIVE_APPOINTMENT_STATUSES, "completed" as const, "no_show" as const];
+const soon = (now: Date) => new Date(now.getTime() + 2 * 3_600_000);
+
+export async function appointmentsForNotes(actor: Actor, clientId: string, now = new Date()) {
+  return db
+    .select({
+      id: schema.appointments.id,
+      startsAt: schema.appointments.startsAt,
+      serviceName: schema.services.name,
+      practitionerId: schema.appointments.practitionerId,
+    })
+    .from(schema.appointments)
+    .innerJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
+    .where(
+      and(
+        eq(schema.appointments.businessId, actor.business.id),
+        eq(schema.appointments.clientId, clientId),
+        inArray(schema.appointments.status, NOTE_STATUSES),
+        lt(schema.appointments.startsAt, soon(now)),
+      ),
+    )
+    .orderBy(desc(schema.appointments.startsAt))
+    .limit(20);
+}
+
 export async function listNotes(actor: Actor, clientId: string) {
   requireClinical(actor);
   return db
@@ -118,12 +145,17 @@ export async function listNotes(actor: Actor, clientId: string) {
       diagnosisCodes: schema.clinicalNotes.diagnosisCodes,
       practitionerId: schema.clinicalNotes.practitionerId,
       practitionerName: schema.practitioners.displayName,
+      appointmentId: schema.clinicalNotes.appointmentId,
+      appointmentStartsAt: schema.appointments.startsAt,
+      serviceName: schema.services.name,
       addenda: sql<number>`(select count(*)::int from ${schema.noteAddenda} where ${schema.noteAddenda.noteId} = ${schema.clinicalNotes.id})`,
     })
     .from(schema.clinicalNotes)
     .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.clinicalNotes.practitionerId))
+    .leftJoin(schema.appointments, eq(schema.appointments.id, schema.clinicalNotes.appointmentId))
+    .leftJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
     .where(and(eq(schema.clinicalNotes.businessId, actor.business.id), eq(schema.clinicalNotes.clientId, clientId)))
-    .orderBy(desc(schema.clinicalNotes.createdAt));
+    .orderBy(desc(sql`coalesce(${schema.appointments.startsAt}, ${schema.clinicalNotes.createdAt})`), desc(schema.clinicalNotes.createdAt));
 }
 
 export async function getNote(actor: Actor, noteId: string) {
@@ -165,33 +197,39 @@ export async function getNote(actor: Actor, noteId: string) {
   return { ...row, addenda, signer, appointment };
 }
 
-// Starts a draft for the doctor, optionally tied to one of the patient's
-// appointments; a draft already open for that appointment is reused.
-export async function createNote(actor: Actor, clientId: string, appointmentId: string | null = null) {
+// Starts a draft for the doctor on one of the patient's appointments, so the
+// record reads visit by visit; a draft already open for it is reused.
+export async function createNote(actor: Actor, clientId: string, appointmentId: string, now = new Date()) {
   const practitionerId = writer(actor);
   const [client] = await db
     .select({ id: schema.clients.id })
     .from(schema.clients)
     .where(and(eq(schema.clients.id, clientId), eq(schema.clients.businessId, actor.business.id)));
   if (!client) throw new NoteError("not_found");
-  if (appointmentId) {
-    const [appointment] = await db
-      .select({ id: schema.appointments.id })
-      .from(schema.appointments)
-      .where(and(eq(schema.appointments.id, appointmentId), eq(schema.appointments.clientId, clientId)));
-    if (!appointment) throw new NoteError("unknown_appointment");
-    const [open] = await db
-      .select({ id: schema.clinicalNotes.id })
-      .from(schema.clinicalNotes)
-      .where(
-        and(
-          eq(schema.clinicalNotes.appointmentId, appointmentId),
-          eq(schema.clinicalNotes.practitionerId, practitionerId),
-          eq(schema.clinicalNotes.status, "draft"),
-        ),
-      );
-    if (open) return open.id;
-  }
+  if (!/^[0-9a-f-]{36}$/i.test(appointmentId)) throw new NoteError("unknown_appointment");
+  const [appointment] = await db
+    .select({ id: schema.appointments.id })
+    .from(schema.appointments)
+    .where(
+      and(
+        eq(schema.appointments.id, appointmentId),
+        eq(schema.appointments.clientId, clientId),
+        inArray(schema.appointments.status, NOTE_STATUSES),
+        lt(schema.appointments.startsAt, soon(now)),
+      ),
+    );
+  if (!appointment) throw new NoteError("unknown_appointment");
+  const [open] = await db
+    .select({ id: schema.clinicalNotes.id })
+    .from(schema.clinicalNotes)
+    .where(
+      and(
+        eq(schema.clinicalNotes.appointmentId, appointmentId),
+        eq(schema.clinicalNotes.practitionerId, practitionerId),
+        eq(schema.clinicalNotes.status, "draft"),
+      ),
+    );
+  if (open) return open.id;
   return db.transaction(async (tx) => {
     const [note] = await tx
       .insert(schema.clinicalNotes)

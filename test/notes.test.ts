@@ -9,6 +9,7 @@ const { encryptExistingRows } = await import("@/lib/encrypt-backfill");
 
 let business: typeof schema.businesses.$inferSelect;
 let clientId: string;
+let visitId: string;
 let ana: Awaited<ReturnType<typeof doctor>>;
 let luis: Awaited<ReturnType<typeof doctor>>;
 
@@ -40,11 +41,42 @@ beforeEach(async () => {
   [{ id: clientId }] = await db.insert(schema.clients).values({ businessId: business.id, waPhone: "50370000000" }).returning();
   ana = await doctor("Dra. Ana Ruiz", "ana@luna.sv");
   luis = await doctor("Dr. Luis Pérez", "luis@luna.sv");
+  visitId = await visit(new Date(Date.now() - 3_600_000));
 });
 
+// One of the patient's appointments, with Dra. Ruiz.
+async function visit(startsAt: Date, status: (typeof schema.appointmentStatus.enumValues)[number] = "booked") {
+  const [service] = await db.insert(schema.services).values({ businessId: business.id, name: "Consulta", durationMin: 30 }).returning();
+  const [a] = await db
+    .insert(schema.appointments)
+    .values({ businessId: business.id, clientId, serviceId: service.id, practitionerId: ana.practitionerId!, startsAt, endsAt: new Date(startsAt.getTime() + 1_800_000), status })
+    .returning();
+  return a.id;
+}
+
 describe("clinical notes", () => {
+  it("belongs to one of the patient's appointments that has started and wasn't cancelled", async () => {
+    const tomorrow = await visit(new Date(Date.now() + 86_400_000));
+    const cancelled = await visit(new Date(Date.now() - 86_400_000), "cancelled_by_client");
+    const lastWeek = await visit(new Date(Date.now() - 7 * 86_400_000), "completed");
+    for (const id of [tomorrow, cancelled, "", "not-a-uuid"]) {
+      await expect(notes.createNote(ana, clientId, id)).rejects.toThrow("unknown_appointment");
+    }
+    expect((await notes.appointmentsForNotes(ana, clientId)).map((a) => a.id)).toEqual([visitId, lastWeek]);
+
+    const today = await notes.createNote(ana, clientId, visitId);
+    expect(await notes.createNote(ana, clientId, visitId)).toBe(today);
+    const older = await notes.createNote(ana, clientId, lastWeek);
+    // Listed visit by visit, newest first.
+    expect((await notes.listNotes(ana, clientId)).map((n) => [n.id, n.appointmentId, n.serviceName])).toEqual([
+      [today, visitId, "Consulta"],
+      [older, lastWeek, "Consulta"],
+    ]);
+  });
+
+
   it("saves a draft, signs it with the next number and keeps it locked", async () => {
-    const first = await notes.createNote(ana, clientId);
+    const first = await notes.createNote(ana, clientId, visitId);
     await notes.saveDraft(ana, first, draft);
     await expect(notes.saveDraft(luis, first, draft)).rejects.toThrow("not_your_note");
     await expect(notes.signNote(luis, first)).rejects.toThrow("not_your_note");
@@ -62,23 +94,23 @@ describe("clinical notes", () => {
     await expect(db.insert(schema.clinicalNotes).values({ businessId: business.id, clientId, practitionerId: ana.practitionerId, createdBy: ana.profile.id, status: "signed" })).rejects.toThrow();
 
     // Numbers follow the patient across doctors; a deleted draft leaves no gap.
-    const scrap = await notes.createNote(luis, clientId);
+    const scrap = await notes.createNote(luis, clientId, visitId);
     await notes.deleteDraft(luis, scrap);
-    const second = await notes.createNote(luis, clientId);
+    const second = await notes.createNote(luis, clientId, visitId);
     await notes.saveDraft(luis, second, { ...draft, diagnosisCodes: [] });
     expect((await notes.signNote(luis, second)).number).toBe(2);
-    await expect(notes.signNote(luis, await notes.createNote(luis, clientId))).rejects.toThrow("empty_note");
+    await expect(notes.signNote(luis, await notes.createNote(luis, clientId, visitId))).rejects.toThrow("empty_note");
   });
 
   it("validates codes and vitals", async () => {
-    const id = await notes.createNote(ana, clientId);
+    const id = await notes.createNote(ana, clientId, visitId);
     await expect(notes.saveDraft(ana, id, { ...draft, diagnosisCodes: ["X99.99"] })).rejects.toThrow("unknown_code");
     await expect(notes.saveDraft(ana, id, { ...draft, vitals: { ...empty, bloodPressure: "80/120" } })).rejects.toThrow("invalid_vitals");
     await expect(notes.saveDraft(ana, id, { ...draft, vitals: { ...empty, temperature: "98" } })).rejects.toThrow("invalid_vitals");
   });
 
   it("takes addenda on signed notes only, from any doctor, and never changes them", async () => {
-    const id = await notes.createNote(ana, clientId);
+    const id = await notes.createNote(ana, clientId, visitId);
     await notes.saveDraft(ana, id, draft);
     await expect(notes.addAddendum(luis, id, "Nota")).rejects.toThrow("not_draft");
     await notes.signNote(ana, id);
@@ -94,18 +126,18 @@ describe("clinical notes", () => {
   });
 
   it("is closed to assistants and Praxia staff", async () => {
-    const id = await notes.createNote(ana, clientId);
+    const id = await notes.createNote(ana, clientId, visitId);
     const assistant = { ...ana, role: "assistant" as const, practitionerId: null };
     const superAdmin = { ...ana, role: "super_admin" as const, managesClinic: true, practitionerId: null };
     for (const actor of [assistant, superAdmin]) {
       await expect(notes.getNote(actor, id)).rejects.toThrow("forbidden");
       await expect(notes.listNotes(actor, clientId)).rejects.toThrow("forbidden");
-      await expect(notes.createNote(actor, clientId)).rejects.toThrow("forbidden");
+      await expect(notes.createNote(actor, clientId, visitId)).rejects.toThrow("forbidden");
     }
   });
 
   it("stores note text encrypted", async () => {
-    const id = await notes.createNote(ana, clientId);
+    const id = await notes.createNote(ana, clientId, visitId);
     await notes.saveDraft(ana, id, draft);
     const [raw] = await db.execute<{ subjective: string; vitals: string; diagnosis_codes: string[] }>(
       sql`select subjective, vitals, diagnosis_codes from clinical_notes where id = ${id}`,

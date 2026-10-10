@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { db, schema } from "@/db";
@@ -138,7 +138,8 @@ export async function needingCall(businessId: string, now = new Date()) {
     .orderBy(asc(schema.appointments.startsAt));
 }
 
-export async function listClients(businessId: string, query?: string) {
+// Archived patients only show when asked for, and then only they do.
+export async function listClients(businessId: string, query?: string, opts: { archived?: boolean } = {}) {
   const q = query?.trim();
   const lastAppointment = sql<Date | null>`max(${schema.appointments.startsAt})`;
   return db
@@ -152,6 +153,7 @@ export async function listClients(businessId: string, query?: string) {
     .where(
       and(
         eq(schema.clients.businessId, businessId),
+        opts.archived ? isNotNull(schema.clients.archivedAt) : isNull(schema.clients.archivedAt),
         q ? or(ilike(schema.clients.name, `%${q}%`), ilike(schema.clients.waPhone, `%${q.replace(/\D/g, "") || q}%`)) : undefined,
       ),
     )

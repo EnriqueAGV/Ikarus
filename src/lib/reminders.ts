@@ -2,6 +2,7 @@ import { aliasedTable, and, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { es } from "date-fns/locale";
 import { formatInTimeZone } from "date-fns-tz";
 import { db, schema } from "@/db";
+import { serviceRunning } from "@/lib/billing";
 import { sendTemplate } from "@/lib/kapso/client";
 import { TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "@/lib/kapso/templates";
 
@@ -17,13 +18,14 @@ import { TEMPLATES, TEMPLATE_LANGUAGE, type TemplateName } from "@/lib/kapso/tem
 
 export const REPLY_WAIT = "2h";
 
-type Kind = "reminder" | "followup" | "cancelled" | "booked";
+type Kind = "reminder" | "followup" | "cancelled" | "booked" | "no_show";
 type Policy = (typeof schema.reminderEndPolicy.enumValues)[number];
 
 function templateFor(kind: Kind, policy: Policy): TemplateName {
   if (kind === "reminder") return "praxia_recordatorio";
   if (kind === "cancelled") return "praxia_cita_cancelada";
   if (kind === "booked") return "praxia_cita_agendada";
+  if (kind === "no_show") return "praxia_no_asistio";
   // Only warn about a cancellation that will actually happen.
   return policy === "auto_cancel" ? "praxia_seguimiento_aviso" : "praxia_seguimiento";
 }
@@ -50,7 +52,7 @@ export async function planReminder(appointmentId: string): Promise<Plan> {
 
 export type SendResult =
   | { status: "sent"; sentAt: string }
-  | { status: "skipped"; reason: "not_found" | "wrong_status" | "already_started" | "template_not_approved" | "not_connected" };
+  | { status: "skipped"; reason: "not_found" | "wrong_status" | "already_started" | "template_not_approved" | "not_connected" | "service_stopped" };
 
 export async function sendReminder(appointmentId: string, kind: "reminder" | "followup", now = new Date()): Promise<SendResult> {
   const row = await load(appointmentId);
@@ -58,6 +60,7 @@ export async function sendReminder(appointmentId: string, kind: "reminder" | "fo
   const { appointment, business } = row;
   if (appointment.startsAt <= now) return { status: "skipped", reason: "already_started" };
   if (!business.phoneNumberId) return { status: "skipped", reason: "not_connected" };
+  if (!serviceRunning(business, now)) return { status: "skipped", reason: "service_stopped" };
   const template = templateFor(kind, business.reminderEndPolicy);
   if (!(await templateApproved(business.id, template))) {
     console.warn(`reminder skipped: ${template} not approved for business ${business.id}`);
@@ -137,7 +140,9 @@ export async function autoCancel(appointmentId: string, now = new Date()): Promi
   return { status: "cancelled", notified: true };
 }
 
-export type NotifyResult = { notified: true } | { notified: false; reason: "no_whatsapp" | "not_connected" | "template_not_approved" };
+export type NotifyResult =
+  | { notified: true }
+  | { notified: false; reason: "no_whatsapp" | "not_connected" | "template_not_approved" | "service_stopped" };
 
 // Tells the patient (on their number's WhatsApp) about an appointment the
 // clinic's team booked or moved for them.
@@ -145,8 +150,23 @@ export async function notifyBooked(appointmentId: string, now = new Date()): Pro
   const row = await load(appointmentId);
   if (!row?.conversation.waPhone) return { notified: false, reason: "no_whatsapp" };
   if (!row.business.phoneNumberId) return { notified: false, reason: "not_connected" };
+  if (!serviceRunning(row.business, now)) return { notified: false, reason: "service_stopped" };
   if (!(await templateApproved(row.business.id, "praxia_cita_agendada"))) return { notified: false, reason: "template_not_approved" };
   await deliver(row, "booked", now, []);
+  return { notified: true };
+}
+
+// After the team marks a no-show: one message offering a new time, if the
+// clinic has it on. The patient's reply reaches the assistant, which books.
+export async function notifyNoShow(appointmentId: string, now = new Date()): Promise<NotifyResult | { notified: false; reason: "turned_off" | "wrong_status" }> {
+  const row = await load(appointmentId);
+  if (!row || row.appointment.status !== "no_show") return { notified: false, reason: "wrong_status" };
+  if (!row.business.noShowFollowUp) return { notified: false, reason: "turned_off" };
+  if (!row.conversation.waPhone) return { notified: false, reason: "no_whatsapp" };
+  if (!row.business.phoneNumberId) return { notified: false, reason: "not_connected" };
+  if (!serviceRunning(row.business, now)) return { notified: false, reason: "service_stopped" };
+  if (!(await templateApproved(row.business.id, "praxia_no_asistio"))) return { notified: false, reason: "template_not_approved" };
+  await deliver(row, "no_show", now, []);
   return { notified: true };
 }
 

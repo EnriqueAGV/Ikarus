@@ -242,6 +242,15 @@ describe("reminder flow", () => {
     expect(kapso.calls).toHaveLength(0);
   });
 
+  it("sends nothing while the clinic's plan has run out", async () => {
+    vi.setSystemTime(new Date("2026-10-13T16:00:00Z"));
+    const a = await appointment();
+    await db.update(schema.businesses).set({ billingSuspended: true }).where(eq(schema.businesses.id, business.id));
+    expect(await reminders.sendReminder(a.id, "reminder")).toEqual({ status: "skipped", reason: "service_stopped" });
+    expect(kapso.calls).toHaveLength(0);
+    expect(await statusOf(a.id)).toBe("booked");
+  });
+
   it("releases its claim when the send fails, so a retry can send", async () => {
     vi.setSystemTime(new Date("2026-10-13T16:00:00Z"));
     const a = await appointment();
