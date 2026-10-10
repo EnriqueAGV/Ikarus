@@ -14,13 +14,22 @@ import {
 import { listNotes } from "@/lib/dashboard/notes";
 import { logChartView, recentAccess } from "@/lib/dashboard/patients";
 import { listIntakeFields } from "@/lib/dashboard/settings";
-import { saveClinicalAction, saveDemographicsAction, setAgentPausedAction, staffReplyAction } from "../../actions";
+import { ConfirmButton } from "@/components/confirm-button";
+import {
+  archivePatientAction,
+  restorePatientAction,
+  saveClinicalAction,
+  saveDemographicsAction,
+  setAgentPausedAction,
+  staffReplyAction,
+} from "../../actions";
 import { startNoteAction } from "../../notes-actions";
 
 const savedLabel: Record<string, string> = {
   datos: "Datos guardados.",
   clinico: "Datos clínicos guardados.",
   nuevo: "Paciente registrado.",
+  restaurado: "Paciente restaurado.",
 };
 
 export default async function ClientPage({ params, searchParams }: PageProps<"/app/[businessId]/clients/[clientId]">) {
@@ -42,7 +51,13 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   const tz = business.timezone;
   const error = typeof sp.error === "string" ? settingsErrorLabel[sp.error] ?? "Algo salió mal." : null;
   const recordError = typeof sp.recordError === "string" ? settingsErrorLabel[sp.recordError] ?? "Algo salió mal." : null;
-  const saved = typeof sp.saved === "string" ? savedLabel[sp.saved] : null;
+  const archivedNow = typeof sp.archived === "string" ? Number(sp.archived) : null;
+  const saved =
+    archivedNow !== null
+      ? `Paciente archivado.${archivedNow > 0 ? ` Se cancelaron ${archivedNow === 1 ? "1 cita próxima" : `${archivedNow} citas próximas`}.` : ""}`
+      : typeof sp.saved === "string"
+        ? savedLabel[sp.saved]
+        : null;
   const input = "rounded-md border px-2 py-1 text-sm";
   const label = "flex flex-col gap-1 text-xs text-neutral-500";
 
@@ -94,6 +109,17 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
         )}
       </header>
 
+      {client.archivedAt && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+          <span>
+            Paciente archivado el {formatLocal(client.archivedAt, tz, "d 'de' MMMM yyyy")}. No aparece en Pacientes ni lo ve el
+            asistente.
+          </span>
+          <form action={restorePatientAction.bind(null, business.id, client.id)}>
+            <button className="rounded-md border bg-white px-3 py-1 text-sm dark:bg-neutral-900">Restaurar</button>
+          </form>
+        </div>
+      )}
       {recordError && <p className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{recordError}</p>}
       {saved && <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{saved}</p>}
 
@@ -309,6 +335,24 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {!client.archivedAt && (
+        <section className="rounded-md border p-4">
+          <h3 className="mb-1 font-medium">Archivar paciente</h3>
+          <p className="mb-3 text-sm text-neutral-500">
+            Deja de aparecer en Pacientes y el asistente ya no lo ve. Sus citas próximas se cancelan. El expediente no se
+            borra, porque debe conservarse, y puedes restaurarlo cuando quieras.
+          </p>
+          <form action={archivePatientAction.bind(null, business.id, client.id)}>
+            <ConfirmButton
+              message="¿Archivar a este paciente? Sus citas próximas se cancelarán."
+              className="rounded-md border px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
+            >
+              Archivar paciente
+            </ConfirmButton>
+          </form>
         </section>
       )}
     </div>

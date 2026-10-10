@@ -54,6 +54,8 @@ export const accessAction = pgEnum("access_action", [
   "sign_note",
   "add_addendum",
   "print_note",
+  "archive_patient",
+  "restore_patient",
 ]);
 export const noteStatus = pgEnum("note_status", ["draft", "signed"]);
 export const businessStatus = pgEnum("business_status", [
@@ -299,6 +301,10 @@ export const clients = pgTable(
     preferredPractitionerId: uuid("preferred_practitioner_id").references(() => practitioners.id, {
       onDelete: "set null",
     }),
+    // Archived patients are hidden from the lists and from the assistant but
+    // kept, since the record and its access log can't be deleted. A holder
+    // who writes again comes back.
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [

@@ -105,6 +105,8 @@ export const accessActionLabel = {
   sign_note: "Firmó una nota",
   add_addendum: "Agregó una adenda",
   print_note: "Imprimió una nota",
+  archive_patient: "Archivó al paciente",
+  restore_patient: "Restauró al paciente",
 } as const;
 
 export const vitalsLabel = {

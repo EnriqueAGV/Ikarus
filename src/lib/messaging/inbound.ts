@@ -72,6 +72,10 @@ export async function storeInbound(p: KapsoInbound): Promise<StoredInbound | nul
     .onConflictDoNothing();
   // The conversation belongs to the number's holder, whoever else shares it.
   const client = (await holderOfNumber(business.id, phone))!;
+  // An archived patient who writes again is back.
+  if (client.archivedAt) {
+    await db.update(schema.clients).set({ archivedAt: null }).where(eq(schema.clients.id, client.id));
+  }
 
   const [message] = await db
     .insert(schema.messages)

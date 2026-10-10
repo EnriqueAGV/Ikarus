@@ -28,7 +28,7 @@ import {
   type WeeklyRule,
 } from "@/lib/dashboard/settings";
 import { addTimeBlock, AgendaError, bookForPatient, moveAppointment, removeTimeBlock, type StaffBookingResult } from "@/lib/dashboard/agenda";
-import { createPatient, PatientError, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
+import { archivePatient, createPatient, PatientError, restorePatient, updateClinical, updateDemographics } from "@/lib/dashboard/patients";
 import { forgetMemberDevices, inviteMember, removeMember, setManagesClinic, TeamError } from "@/lib/dashboard/team";
 import { formatLocal } from "@/lib/dashboard/labels";
 import { sendStaffReply } from "@/lib/messaging/staff";
@@ -217,6 +217,25 @@ export async function createPatientAction(businessId: string, form: FormData) {
   }
   revalidatePath(`/app/${businessId}`, "layout");
   redirect(`/app/${businessId}/clients/${id}?saved=nuevo`);
+}
+
+export async function archivePatientAction(businessId: string, clientId: string) {
+  const membership = await requireBusinessAccess(businessId);
+  let outcome: string;
+  try {
+    const { cancelled } = await archivePatient(membership, clientId);
+    outcome = `archived=${cancelled}`;
+  } catch (err) {
+    if (!(err instanceof PatientError)) throw err;
+    outcome = `recordError=${err.code}`;
+  }
+  revalidatePath(`/app/${businessId}`, "layout");
+  redirect(`/app/${businessId}/clients/${clientId}?${outcome}`);
+}
+
+export async function restorePatientAction(businessId: string, clientId: string) {
+  const membership = await requireBusinessAccess(businessId);
+  await patientChange(businessId, clientId, "restaurado", () => restorePatient(membership, clientId));
 }
 
 export async function saveHoursAction(businessId: string, practitionerId: string, form: FormData) {

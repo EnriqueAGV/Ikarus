@@ -10,7 +10,8 @@ export function conversationId(client: Pick<Client, "id" | "holderId">) {
   return client.holderId ?? client.id;
 }
 
-// The holder of a number and everyone who shares it, holder first.
+// The holder of a number and everyone who shares it, holder first. Archived
+// patients other than the holder are left out.
 export async function household(businessId: string, holderId: string, exec: Executor = db) {
   const rows = await exec
     .select()
@@ -18,7 +19,10 @@ export async function household(businessId: string, holderId: string, exec: Exec
     .where(
       and(
         eq(schema.clients.businessId, businessId),
-        or(eq(schema.clients.id, holderId), eq(schema.clients.holderId, holderId)),
+        or(
+          eq(schema.clients.id, holderId),
+          and(eq(schema.clients.holderId, holderId), isNull(schema.clients.archivedAt)),
+        ),
       ),
     )
     .orderBy(asc(schema.clients.createdAt));

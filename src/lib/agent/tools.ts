@@ -14,6 +14,7 @@ import {
   upcomingAppointments,
 } from "@/lib/booking/service";
 import { listPractitioners } from "@/lib/booking/practitioners";
+import { normalizeDui } from "@/lib/dashboard/patients";
 import { addToNumber } from "@/lib/household";
 import { type Business, type Client, type IntakeField, missingIntake, reloadClient } from "./context";
 
@@ -36,10 +37,11 @@ export const TOOLS: Tool[] = [
   {
     name: "save_client_info",
     description:
-      "Save a patient's name and/or answers to the clinic's intake questions. Call it as soon as they are given.",
+      "Save a patient's name, DUI and/or answers to the clinic's intake questions. Call it as soon as they are given.",
     input_schema: obj({
       patient_id: patientId,
       name: { type: ["string", "null"], description: "Patient's full name, or null if not given now" },
+      dui: { type: ["string", "null"], description: "The patient's DUI (9 digits, e.g. 01234567-8), or null if not given now" },
       answers: {
         type: "array",
         description: "Answers to intake questions, by question key",
@@ -128,6 +130,7 @@ const inputs = {
   save_client_info: z.object({
     patient_id: z.string().nullish(),
     name: z.string().nullable(),
+    dui: z.string().nullish(),
     answers: z.array(z.object({ key: z.string(), value: z.string() })),
   }),
   add_patient: z.object({ name: z.string() }),
@@ -215,6 +218,12 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
           rejected.push(`${key}: must be one of ${field.options.join(", ")}`);
         else data[key] = value.trim();
       }
+      let dui: string | null = null;
+      try {
+        dui = normalizeDui(input.dui ?? null);
+      } catch {
+        rejected.push("dui: a DUI has 9 digits, like 01234567-8; ask the patient to check it");
+      }
       // The default birth-date question also fills the record header, unless
       // the clinic already typed one in.
       const birth = typeof data.fecha_nacimiento === "string" && isDate(data.fecha_nacimiento) ? data.fecha_nacimiento : null;
@@ -223,6 +232,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         .set({
           data,
           ...(input.name?.trim() ? { name: input.name.trim() } : {}),
+          ...(dui ? { dui } : {}),
           ...(birth && !patient.dateOfBirth ? { dateOfBirth: birth } : {}),
         })
         .where(eq(schema.clients.id, patient.id))

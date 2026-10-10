@@ -13,10 +13,21 @@ export async function loadIntakeFields(businessId: string) {
     .orderBy(asc(schema.intakeFields.position));
 }
 
-// Required information the client has not given yet. The name is always required.
-export function missingIntake(client: Client, fields: IntakeField[]) {
+// Under 18 by their birth date: minors have no DUI.
+function isMinor(client: Client, now: Date) {
+  const raw = client.dateOfBirth ?? client.data.fecha_nacimiento;
+  if (typeof raw !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+  const adult = new Date(`${raw}T00:00:00Z`);
+  adult.setUTCFullYear(adult.getUTCFullYear() + 18);
+  return adult > now;
+}
+
+// Required information the client has not given yet. The name is always
+// required, and so is the DUI unless the patient is a minor.
+export function missingIntake(client: Client, fields: IntakeField[], now = new Date()) {
   const missing: string[] = [];
   if (!client.name?.trim()) missing.push("name");
+  if (!client.dui && !isMinor(client, now)) missing.push("dui");
   for (const f of fields) {
     const v = client.data[f.key];
     if (f.required && (v === undefined || v === null || String(v).trim() === "")) missing.push(f.key);

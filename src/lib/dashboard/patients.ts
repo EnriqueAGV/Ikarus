@@ -1,5 +1,7 @@
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { LIVE_APPOINTMENT_STATUSES } from "@/db/schema";
+import { updateAppointmentByBusiness } from "@/lib/dashboard/appointments";
 import { getPractitioner } from "@/lib/booking/practitioners";
 import { holderOfNumber, normalizePhone } from "@/lib/household";
 import { can, type Role } from "@/lib/permissions";
@@ -199,3 +201,33 @@ export async function createPatient(
   });
 }
 
+
+// "Deleting" a patient archives them: the record and its access log must be
+// kept, so they are hidden from Pacientes, search and the assistant instead,
+// and their upcoming appointments are cancelled. Restoring undoes it, and a
+// number's holder who writes again comes back by themselves.
+export async function archivePatient(actor: Actor, clientId: string, now = new Date()) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  await requirePatient(actor.business.id, clientId);
+  const upcoming = await db
+    .select({ id: schema.appointments.id })
+    .from(schema.appointments)
+    .where(
+      and(
+        eq(schema.appointments.clientId, clientId),
+        inArray(schema.appointments.status, [...LIVE_APPOINTMENT_STATUSES]),
+        gt(schema.appointments.startsAt, now),
+      ),
+    );
+  for (const { id } of upcoming) await updateAppointmentByBusiness(actor.business.id, id, "cancel", now);
+  await db.update(schema.clients).set({ archivedAt: now }).where(eq(schema.clients.id, clientId));
+  await logAccess(actor, clientId, "archive_patient");
+  return { cancelled: upcoming.length };
+}
+
+export async function restorePatient(actor: Actor, clientId: string) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  await requirePatient(actor.business.id, clientId);
+  await db.update(schema.clients).set({ archivedAt: null }).where(eq(schema.clients.id, clientId));
+  await logAccess(actor, clientId, "restore_patient");
+}
