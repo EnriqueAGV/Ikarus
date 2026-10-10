@@ -335,6 +335,15 @@ export const clients = pgTable(
       .notNull()
       .$defaultFn(() => ({})),
     intakeReview: encryptedJson<import("../lib/dashboard/intake-review").IntakeReview>("intake_review", "clients.intake_review").notNull().$defaultFn(() => ({})),
+    // On a number's holder: when someone proved, by a birth date or DUI on
+    // the record, that the WhatsApp number really is theirs. A number typed in
+    // by staff (a typo, an old or recycled number) starts unverified, and the
+    // assistant shows nothing of the record until it is verified.
+    waVerifiedAt: timestamp("wa_verified_at", { withTimezone: true }),
+    waVerifyFailures: integer("wa_verify_failures").notNull().default(0),
+    // When staff entered or confirmed the name and DUI. From then on the
+    // assistant can't overwrite them: what a patient sends goes to review.
+    identityReviewedAt: timestamp("identity_reviewed_at", { withTimezone: true }),
     agentPaused: boolean("agent_paused").notNull().default(false),
     attentionStatus: text("attention_status").$type<"needs_reply" | "follow_up" | "resolved">(),
     attentionSince: timestamp("attention_since", { withTimezone: true }),
@@ -429,7 +438,7 @@ export const messages = pgTable(
     payload: encryptedJson<unknown>("payload", "messages.payload"),
     createdAt: createdAt(),
   },
-  (t) => [index("messages_client_time").on(t.clientId, t.createdAt)],
+  (t) => [index("messages_client_time").on(t.clientId, t.createdAt), index("messages_kapso_id").on(t.businessId, t.kapsoMessageId)],
 );
 
 export const templates = pgTable(

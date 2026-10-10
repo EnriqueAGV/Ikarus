@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { requireBusinessAccess } from "@/lib/auth";
 import { db, schema } from "@/db";
-import { PatientError, createPatient, updateDemographics, updateClinical, changePhone } from "@/lib/dashboard/patients";
+import { PatientError, createPatient, updateDemographics, updateClinical, changePhone, markWhatsappVerified } from "@/lib/dashboard/patients";
 import { resolveConversation } from "@/lib/dashboard/inbox";
 import { sendStaffReply } from "@/lib/messaging/staff";
 import { settingsErrorLabel } from "@/lib/dashboard/labels";
@@ -25,6 +25,11 @@ export async function editPatientAction(businessId: string, clientId: string, fo
     dui: value(form, "dui"), address: value(form, "address"), guardianName: value(form, "guardianName"), guardianPhone: value(form, "guardianPhone"),
     emergencyContactName: value(form, "emergencyContactName"), emergencyContactPhone: value(form, "emergencyContactPhone"), preferredPractitionerId: value(form, "preferredPractitionerId"),
   }), "Datos guardados.");
+}
+export async function verifyWhatsappAction(businessId: string, clientId: string) {
+  const actor = await requireBusinessAccess(businessId);
+  await markWhatsappVerified(actor, clientId);
+  revalidatePath(`/app/${businessId}`, "layout");
 }
 export async function editClinicalAction(businessId: string, clientId: string, form: FormData): Promise<FormResult> {
   const actor = await requireBusinessAccess(businessId);

@@ -45,14 +45,22 @@ function retryable(err: unknown) {
   return true; // timeouts and network errors
 }
 
+// OpenRouter routes each call to one of several providers. Patient
+// conversations may only go to providers that neither store nor train on
+// them (zero data retention); among those, the fastest.
+export function providerPreferences(url: string) {
+  return new URL(url).hostname.endsWith("openrouter.ai")
+    ? { provider: { sort: "latency", data_collection: "deny", zdr: true } }
+    : {};
+}
+
 export function chatClient(
   baseUrl = env.LLM_BASE_URL,
   apiKey = env.LLM_API_KEY,
   { timeoutMs = ATTEMPT_TIMEOUT_MS, attempts = ATTEMPTS } = {},
 ): ChatClient {
   const url = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  // OpenRouter routes each call to one of several providers; prefer the fastest.
-  const extra = new URL(url).hostname.endsWith("openrouter.ai") ? { provider: { sort: "latency" } } : {};
+  const extra = providerPreferences(url);
 
   async function once(req: ChatRequest): Promise<ChatResponse> {
     const res = await fetch(url, {
@@ -61,7 +69,8 @@ export function chatClient(
         "content-type": "application/json",
         ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
       },
-      body: JSON.stringify({ ...req, tool_choice: "auto", ...extra }),
+      // A call without tools (the reply check) sends neither tools nor tool_choice.
+      body: JSON.stringify({ ...req, ...(req.tools.length ? { tool_choice: "auto" } : { tools: undefined }), ...extra }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await res.text();

@@ -1,7 +1,7 @@
 import { openAttention } from "@/lib/messaging/attention";
 import { isoDate } from "@/lib/dates";
 import type { ChatTool } from "./llm";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
@@ -18,7 +18,10 @@ import {
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { normalizeDui } from "@/lib/dashboard/patients";
 import { addToNumber } from "@/lib/household";
+import { RECEIVED_DUI_KEY, RECEIVED_NAME_KEY } from "@/lib/dashboard/intake-review";
 import { type Business, type Client, type IntakeField, missingIntake, reloadClient } from "./context";
+import { householdSection } from "./prompt";
+import { ANSWER_MAX, type DuiVault, NAME_MAX, oneLine, REASON_MAX } from "./sanitize";
 
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> };
 
@@ -116,6 +119,15 @@ export const TOOLS: Tool[] = [
     input_schema: obj({}),
   },
   {
+    name: "verify_identity",
+    description:
+      "Check that the person writing owns this WhatsApp number, by the date of birth or DUI of someone registered on it. Only needed when the context says the number is not verified.",
+    input_schema: obj({
+      date_of_birth: { type: ["string", "null"], description: "YYYY-MM-DD, or null" },
+      dui: { type: ["string", "null"], description: "The DUI or its [DUI n] token, or null" },
+    }),
+  },
+  {
     name: "handoff_to_business",
     description:
       "Pass the conversation to the business's staff and stop answering automatically. Use when the client needs a human.",
@@ -132,24 +144,30 @@ export const CHAT_TOOLS: ChatTool[] = TOOLS.map((t) => ({
 // client is the number's holder, who is writing; household is everyone on
 // the number, holder first.
 // sendLocation is set by a tool when the clinic's pin should follow the reply.
+// verified: the number's owner proved it's theirs (see clients.waVerifiedAt);
+// until then only tools that reveal and change nothing of the record run.
+// duis turns the DUI tokens the model sees back into DUIs.
 export type ToolContext = {
   business: Business;
   client: Client;
   household: Client[];
   fields: IntakeField[];
   now: Date;
+  verified: boolean;
+  duis: DuiVault;
   sendLocation?: boolean;
 };
 export type ToolOutcome = { result: unknown; isError?: boolean; handoff?: boolean };
 
+const nameInput = z.string().max(200).transform((s) => oneLine(s, NAME_MAX));
 const inputs = {
   save_client_info: z.object({
     patient_id: z.string().nullish(),
-    name: z.string().nullable(),
-    dui: z.string().nullish(),
-    answers: z.array(z.object({ key: z.string(), value: z.string() })),
+    name: nameInput.nullable(),
+    dui: z.string().max(20).nullish(),
+    answers: z.array(z.object({ key: z.string().max(100), value: z.string().max(1000).transform((s) => oneLine(s, ANSWER_MAX)) })).max(30),
   }),
-  add_patient: z.object({ name: z.string() }),
+  add_patient: z.object({ name: nameInput }),
   list_services: z.object({}),
   list_practitioners: z.object({}),
   find_available_slots: z.object({
@@ -172,8 +190,17 @@ const inputs = {
     practitioner_id: z.string().nullish(),
   }),
   send_location: z.object({}),
-  handoff_to_business: z.object({ reason: z.string() }),
+  verify_identity: z.object({ date_of_birth: z.string().max(20).nullish(), dui: z.string().max(20).nullish() }),
+  handoff_to_business: z.object({ reason: z.string().max(2000).transform((s) => oneLine(s, REASON_MAX)) }),
 };
+
+// Before the number is verified: nothing that shows or changes the record.
+const OPEN_TOOLS = new Set(["list_services", "list_practitioners", "find_available_slots", "send_location", "verify_identity", "handoff_to_business"]);
+const VERIFY_FIRST = "This number is not verified. Ask for the date of birth or DUI of the person writing (or of the patient they write for) and call verify_identity first.";
+// Three wrong answers and the team takes over.
+const MAX_VERIFY_FAILURES = 3;
+// More patients than any family needs on one number is someone filling the clinic's list.
+const MAX_HOUSEHOLD = 10;
 
 export const hasLocation = (b: Business) => b.locationLat !== null && b.locationLng !== null;
 
@@ -219,6 +246,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   if (!(name in inputs)) return { result: `Unknown tool ${name}`, isError: true };
   const parsed = inputs[name as keyof typeof inputs].safeParse(rawInput);
   if (!parsed.success) return { result: `Invalid input: ${parsed.error.message}`, isError: true };
+  if (!ctx.verified && !OPEN_TOOLS.has(name)) return { result: VERIFY_FIRST, isError: true };
   const { business, now } = ctx;
   const tz = business.timezone;
 
@@ -243,9 +271,26 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       }
       let dui: string | null = null;
       try {
-        dui = normalizeDui(input.dui ?? null);
+        dui = normalizeDui(input.dui ? ctx.duis.resolve(input.dui) : null);
       } catch {
         rejected.push("dui: a DUI has 9 digits, like 01234567-8; ask the patient to check it");
+      }
+      // Once staff confirmed the name and DUI, a different one is kept for
+      // their review instead of overwriting the record.
+      const newName = input.name || null;
+      const locked = patient.identityReviewedAt !== null;
+      const nameChanges = newName && newName.toLowerCase() !== patient.name?.trim().toLowerCase();
+      const duiChanges = dui && dui !== patient.dui;
+      const setName = nameChanges && (!locked || !patient.name);
+      const setDui = duiChanges && (!locked || !patient.dui);
+      const forReview: string[] = [];
+      if (nameChanges && !setName) {
+        data[RECEIVED_NAME_KEY] = newName;
+        forReview.push("name");
+      }
+      if (duiChanges && !setDui) {
+        data[RECEIVED_DUI_KEY] = dui;
+        forReview.push("dui");
       }
       // The default birth-date question also fills the record header, unless
       // the clinic already typed one in.
@@ -254,26 +299,33 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         .update(schema.clients)
         .set({
           data,
-          ...(input.name?.trim() ? { name: input.name.trim() } : {}),
-          ...(dui ? { dui } : {}),
+          ...(setName ? { name: newName } : {}),
+          ...(setDui ? { dui } : {}),
           ...(birth && !patient.dateOfBirth ? { dateOfBirth: birth } : {}),
         })
         .where(eq(schema.clients.id, patient.id))
         .returning();
       remember(ctx, client);
       return {
-        result: { saved: true, patient_id: client.id, rejected, still_missing: missingIntake(client, ctx.fields) },
+        result: {
+          saved: true,
+          patient_id: client.id,
+          rejected,
+          ...(forReview.length ? { sent_to_team_for_review: forReview, note: "The record already had a different value; the team will review it. Tell the patient the team will check the change." } : {}),
+          still_missing: missingIntake(client, ctx.fields),
+        },
         isError: rejected.length > 0,
       };
     }
 
     case "add_patient": {
       const input = inputs.add_patient.parse(rawInput);
-      const name = input.name.trim();
+      const name = input.name;
       if (!name) return { result: "Give the patient's full name.", isError: true };
       const holder = ctx.client;
       const existing = ctx.household.find((p) => p.name?.trim().toLowerCase() === name.toLowerCase());
       if (existing) return { result: { patient_id: existing.id, already_registered: true } };
+      if (ctx.household.length >= MAX_HOUSEHOLD) return { result: "This number already has the most patients allowed. Hand off to the team.", isError: true };
       const patient = await addToNumber(business.id, holder, { name });
       ctx.household = [...ctx.household, patient];
       return { result: { patient_id: patient.id, still_missing: missingIntake(patient, ctx.fields) } };
@@ -418,9 +470,69 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       return { result: { will_send_after_reply: true } };
     }
 
+    case "verify_identity": {
+      const input = inputs.verify_identity.parse(rawInput);
+      if (ctx.verified) return { result: { verified: true } };
+      if (ctx.client.waVerifyFailures >= MAX_VERIFY_FAILURES) return { result: "Too many failed attempts. Call handoff_to_business.", isError: true };
+      const birth = input.date_of_birth ? isoDate(input.date_of_birth.trim()) : null;
+      let dui: string | null = null;
+      try {
+        dui = input.dui ? normalizeDui(ctx.duis.resolve(input.dui)) : null;
+      } catch {
+        return { result: "That is not a valid DUI (9 digits). Ask again.", isError: true };
+      }
+      if (!birth && !dui) return { result: "Give a date of birth as YYYY-MM-DD or a DUI.", isError: true };
+      const onFile = ctx.household.filter((p) => p.dateOfBirth || p.data.fecha_nacimiento || p.dui);
+      if (!onFile.length) {
+        return { result: "The record has no birth date or DUI to compare with. Call handoff_to_business so the team can confirm the number.", isError: true };
+      }
+      const match = onFile.some(
+        (p) => (birth && (p.dateOfBirth === birth || p.data.fecha_nacimiento === birth)) || (dui && p.dui === dui),
+      );
+      if (!match) {
+        const [after] = await db
+          .update(schema.clients)
+          .set({ waVerifyFailures: sql`${schema.clients.waVerifyFailures} + 1` })
+          .where(eq(schema.clients.id, ctx.client.id))
+          .returning();
+        ctx.client = after;
+        if (after.waVerifyFailures >= MAX_VERIFY_FAILURES) {
+          await openAttention(business.id, ctx.client.id, "No se pudo verificar el número de WhatsApp", false, now);
+          return { result: "It does not match, and there are no attempts left. Tell the patient the team will contact them.", isError: true, handoff: true };
+        }
+        return { result: "It does not match the record. Ask them to check it; do not say what is on the record.", isError: true };
+      }
+      const [verified] = await db
+        .update(schema.clients)
+        .set({ waVerifiedAt: now, waVerifyFailures: 0 })
+        .where(eq(schema.clients.id, ctx.client.id))
+        .returning();
+      ctx.client = verified;
+      ctx.household = ctx.household.map((p) => (p.id === verified.id ? verified : p));
+      ctx.verified = true;
+      const upcoming = await upcomingAppointments(business.id, ctx.household.map((p) => p.id), now);
+      return {
+        result: {
+          verified: true,
+          context: householdSection({
+            business,
+            patients: ctx.household.map((p) => ({ patient: p, missing: missingIntake(p, ctx.fields) })),
+            upcoming: upcoming.map((u) => ({
+              id: u.appointment.id,
+              patientName: ctx.household.find((p) => p.id === u.appointment.clientId)?.name ?? null,
+              serviceName: u.serviceName,
+              practitionerName: u.practitionerName,
+              startsAt: u.appointment.startsAt,
+              status: u.appointment.status,
+            })),
+          }),
+        },
+      };
+    }
+
     case "handoff_to_business": {
       const input = inputs.handoff_to_business.parse(rawInput);
-      await openAttention(ctx.business.id, ctx.client.id, String(input.reason), false, ctx.now);
+      await openAttention(ctx.business.id, ctx.client.id, input.reason || "El asistente necesita ayuda del equipo", false, ctx.now);
       return { result: { handed_off: true }, handoff: true };
     }
   }

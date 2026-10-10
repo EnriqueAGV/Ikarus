@@ -101,7 +101,7 @@ Note text, vitals, addenda, the DUI, allergies, chronic conditions, intake answe
 
 ## How a client message is answered
 
-Kapso posts the message to `/api/webhooks/kapso/messages`. Ikarus stores it (creating the client on first contact) and sends an Inngest event. The `agent-reply` function runs one conversation at a time per client: it loads the business's services, opening hours, intake questions and the last 30 messages, and lets the model set in `LLM_MODEL` (served at `LLM_BASE_URL`) answer using the tools in `src/lib/agent/tools.ts`. Bookings only happen through those tools, which re-check the calendar inside a transaction; the database's exclusion constraint is the last guard against double booking.
+Kapso posts the message to `/api/webhooks/kapso/messages`. Ikarus stores it (creating the client on first contact) and sends an Inngest event. The `agent-reply` function runs one conversation at a time per client: it loads the business's services, opening hours, intake questions and the last 30 messages, and lets the model set in `LLM_MODEL` (served at `LLM_BASE_URL`) answer using the tools in `src/lib/agent/tools.ts`. Bookings only happen through those tools, which re-check the calendar inside a transaction; the database's exclusion constraint is the last guard against double booking. Before a reply goes out, a second call (`LLM_GUARD_MODEL`, default `LLM_MODEL`) checks it for medical advice or leaked internals; a failed check sends the holding reply and hands the conversation to the team. A number staff typed into a record stays unverified, and the assistant shows nothing of that record, until the writer gives a matching birth date or DUI.
 
 ## Checks
 
