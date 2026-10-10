@@ -28,8 +28,10 @@ function draftFrom(form: FormData): DraftInput {
   };
 }
 
-export async function startNoteAction(businessId: string, clientId: string, appointmentId: string | null) {
+export async function startNoteAction(businessId: string, clientId: string, appointmentId: string | null, form?: FormData) {
   const membership = await requireBusinessAccess(businessId);
+  // From the patient's page the appointment is picked in the form.
+  appointmentId ??= String(form?.get("appointmentId") ?? "");
   let noteId: string;
   try {
     noteId = await createNote(membership, clientId, appointmentId);

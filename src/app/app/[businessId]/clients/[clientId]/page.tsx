@@ -11,7 +11,7 @@ import {
   formatPhone,
   settingsErrorLabel,
 } from "@/lib/dashboard/labels";
-import { listNotes } from "@/lib/dashboard/notes";
+import { appointmentsForNotes, listNotes } from "@/lib/dashboard/notes";
 import { logChartView, recentAccess } from "@/lib/dashboard/patients";
 import { listIntakeFields } from "@/lib/dashboard/settings";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -45,7 +45,12 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
   ]);
   if (!detail) notFound();
   await logChartView(membership, clientId);
+  const writes = can(membership, "notes.write") && membership.practitionerId !== null;
   const [access, notes] = clinical ? await Promise.all([recentAccess(business.id, clientId), listNotes(membership, clientId)]) : [[], []];
+  const visits = writes ? await appointmentsForNotes(membership, clientId) : [];
+  // Notes grouped by the appointment they belong to, newest visit first.
+  const byVisit = new Map<string, typeof notes>();
+  for (const n of notes) byVisit.set(n.appointmentId ?? "none", [...(byVisit.get(n.appointmentId ?? "none") ?? []), n]);
   const { client, conversation, others, appointments, messages } = detail;
   const shared = conversation.id !== client.id;
   const tz = business.timezone;
@@ -206,32 +211,63 @@ export default async function ClientPage({ params, searchParams }: PageProps<"/a
 
       {clinical && (
         <section id="notas" className="rounded-md border p-4">
-          <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h3 className="font-medium">Notas clínicas</h3>
-            {can(membership, "notes.write") && membership.practitionerId && (
-              <form action={startNoteAction.bind(null, business.id, client.id, null)}>
-                <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Nueva nota</button>
-              </form>
-            )}
+            {writes &&
+              (visits.length > 0 ? (
+                <form action={startNoteAction.bind(null, business.id, client.id, null)} className="flex items-center gap-2">
+                  <select name="appointmentId" defaultValue={visits[0].id} className={input} aria-label="Cita">
+                    {visits.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {formatLocal(v.startsAt, tz, "EEE d MMM yyyy, HH:mm")} · {v.serviceName}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="rounded-md bg-brand px-3 py-1.5 text-sm text-white hover:bg-brand-hover">Nueva nota</button>
+                </form>
+              ) : (
+                <span className="text-sm text-neutral-500">
+                  Cada nota va con una cita.{" "}
+                  <Link href={`/app/${business.id}/appointments/new?clientId=${client.id}`} className="text-brand hover:underline">
+                    Agenda una
+                  </Link>{" "}
+                  para escribirla.
+                </span>
+              ))}
           </div>
           {notes.length === 0 ? (
             <p className="text-sm text-neutral-500">Sin notas todavía.</p>
           ) : (
-            <ul className="divide-y text-sm">
-              {notes.map((n) => (
-                <li key={n.id}>
-                  <Link href={`/app/${business.id}/clients/${client.id}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
-                    <span>
-                      {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
-                      <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
-                      {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
-                      {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
-                    </span>
-                    {n.status === "draft" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">Sin firmar</span>}
-                  </Link>
-                </li>
+            <div className="flex flex-col gap-4">
+              {[...byVisit.entries()].map(([visit, group]) => (
+                <div key={visit}>
+                  <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    {group[0].appointmentStartsAt ? (
+                      <span className="capitalize">
+                        Cita del {formatLocal(group[0].appointmentStartsAt, tz, "EEE d MMM yyyy, HH:mm")} · {group[0].serviceName}
+                      </span>
+                    ) : (
+                      "Sin cita"
+                    )}
+                  </h4>
+                  <ul className="divide-y text-sm">
+                    {group.map((n) => (
+                      <li key={n.id}>
+                        <Link href={`/app/${business.id}/clients/${client.id}/notes/${n.id}`} className="flex items-center justify-between gap-2 py-2 hover:underline">
+                          <span>
+                            {n.status === "signed" ? `Nota ${n.number}` : "Borrador"} ·{" "}
+                            <span className="capitalize">{formatLocal(n.signedAt ?? n.createdAt, tz, "EEE d MMM yyyy")}</span> · {n.practitionerName}
+                            {n.diagnosisCodes.length > 0 && <span className="font-mono text-neutral-500"> · {n.diagnosisCodes.join(", ")}</span>}
+                            {n.addenda > 0 && <span className="text-neutral-500"> · {n.addenda === 1 ? "1 adenda" : `${n.addenda} adendas`}</span>}
+                          </span>
+                          {n.status === "draft" && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">Sin firmar</span>}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
+            </div>
           )}
         </section>
       )}

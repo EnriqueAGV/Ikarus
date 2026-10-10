@@ -65,7 +65,7 @@ export const settingsErrorLabel: Record<string, string> = {
   empty_note: "Escribe algo en la nota antes de firmarla.",
   unknown_code: "Uno de los diagnósticos no es un código CIE-10 válido.",
   invalid_vitals: "Revisa los signos vitales: algún valor no es válido.",
-  unknown_appointment: "Esa cita no es de este paciente.",
+  unknown_appointment: "Elige una cita del paciente que ya empezó o empieza pronto, y que no esté cancelada.",
   empty_addendum: "Escribe el texto de la adenda.",
   not_found: "No se encontró.",
   last_manager: "El consultorio debe tener al menos una persona que lo administre.",
