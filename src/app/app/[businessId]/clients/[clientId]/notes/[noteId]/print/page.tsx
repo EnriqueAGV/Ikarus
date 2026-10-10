@@ -1,3 +1,4 @@
+import { displayDate } from "@/lib/dates";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { NoteBody } from "@/components/dashboard/note-body";
@@ -51,10 +52,10 @@ export default async function PrintNotePage({ params }: PageProps<"/app/[busines
           <span className="text-neutral-600">Nota n.º</span> {note.number}
         </p>
         <p>
-          <span className="text-neutral-600">Fecha de nacimiento:</span> {client.dateOfBirth ?? "—"}
+          <span className="text-neutral-600">Fecha de nacimiento:</span> {client.dateOfBirth ? displayDate(client.dateOfBirth) : "—"}
         </p>
         <p className="text-right">
-          <span className="text-neutral-600">Fecha:</span> {formatLocal(note.createdAt, tz, "d MMM yyyy, HH:mm")}
+          <span className="text-neutral-600">Fecha:</span> {formatLocal(note.createdAt, tz, "dd-MM-yyyy, h:mm a")}
         </p>
         {client.dui && (
           <p>
@@ -70,7 +71,7 @@ export default async function PrintNotePage({ params }: PageProps<"/app/[busines
             <div key={a.id} className="text-sm">
               <p className="whitespace-pre-wrap">{a.body}</p>
               <p className="text-xs text-neutral-600">
-                {a.practitionerName ?? a.authorName ?? a.authorEmail} · {formatLocal(a.createdAt, tz, "d MMM yyyy, HH:mm")}
+                {a.practitionerName ?? a.authorName ?? a.authorEmail} · {formatLocal(a.createdAt, tz, "dd-MM-yyyy, h:mm a")}
               </p>
             </div>
           ))}
@@ -78,7 +79,7 @@ export default async function PrintNotePage({ params }: PageProps<"/app/[busines
       )}
       <footer className="mt-6 border-t pt-3 text-xs text-neutral-600">
         <p>
-          Firmada electrónicamente por {signer?.fullName ?? practitioner.displayName} el {formatLocal(note.signedAt!, tz, "d MMM yyyy, HH:mm")}.
+          Firmada electrónicamente por {signer?.fullName ?? practitioner.displayName} el {formatLocal(note.signedAt!, tz, "dd-MM-yyyy, h:mm a")}.
         </p>
         <p className="font-mono break-all">Huella SHA-256: {note.contentHash}</p>
       </footer>

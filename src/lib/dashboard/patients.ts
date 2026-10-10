@@ -39,6 +39,7 @@ export class PatientError extends Error {
 }
 
 export type DemographicsInput = {
+  phone?: string | null;
   name: string | null;
   dateOfBirth: string | null;
   sex: "female" | "male" | null;
@@ -131,6 +132,9 @@ export async function updateDemographics(actor: Actor, clientId: string, input: 
     preferredPractitionerId: input.preferredPractitionerId,
   };
   await db.transaction(async (tx) => {
+    const patient = await lockPatient(tx, actor.business.id, clientId);
+    if (patient.archivedAt) throw new PatientError("archived");
+    if (input.phone !== undefined) await changePhoneInTransaction(tx, actor, clientId, input.phone);
     await tx
       .update(schema.clients)
       .set(values)
@@ -273,34 +277,30 @@ const dependentsOf = (tx: Tx, holderId: string) =>
 // number along, and keeps the conversation. Anyone else joins the new
 // number's holder if it has one, or holds it; their own past messages stay
 // on their record.
-export async function changePhone(actor: Actor, clientId: string, raw: string | null) {
-  if (!can(actor, "patients")) throw new PatientError("forbidden");
+async function changePhoneInTransaction(tx: Tx, actor: Actor, clientId: string, raw: string | null) {
   const phone = normalizePhone(raw);
   if (phone === undefined) throw new PatientError("invalid_phone");
-  await db.transaction(async (tx) => {
-    const patient = await lockPatient(tx, actor.business.id, clientId);
-    if (phone === patient.waPhone) return;
-    const other = phone ? await holderOfNumber(actor.business.id, phone, tx) : null;
-    const dependents = patient.holderId ? [] : await dependentsOf(tx, patient.id);
-    if (dependents.length) {
-      if (!phone) throw new PatientError("has_dependents");
-      // Two families can't merge onto one number by accident.
-      if (other) throw new PatientError("phone_in_use");
-      await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.id, patient.id));
-      await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.holderId, patient.id));
-    } else {
-      await tx
-        .update(schema.clients)
-        .set({ waPhone: phone, holderId: other?.id ?? null })
-        .where(eq(schema.clients.id, patient.id));
-    }
-    await tx.insert(schema.accessLog).values({
-      businessId: actor.business.id,
-      clientId,
-      userId: actor.profile.id,
-      practitionerId: actor.practitionerId,
-      action: "edit_chart",
-    });
+  const patient = await lockPatient(tx, actor.business.id, clientId);
+  if (patient.archivedAt) throw new PatientError("archived");
+  if (phone === patient.waPhone) return false;
+  const other = phone ? await holderOfNumber(actor.business.id, phone, tx) : null;
+  const dependents = patient.holderId ? [] : await dependentsOf(tx, patient.id);
+  if (dependents.length) {
+    if (!phone) throw new PatientError("has_dependents");
+    if (other) throw new PatientError("phone_in_use");
+    await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.id, patient.id));
+    await tx.update(schema.clients).set({ waPhone: phone }).where(eq(schema.clients.holderId, patient.id));
+  } else {
+    await tx.update(schema.clients).set({ waPhone: phone, holderId: other?.id ?? null }).where(eq(schema.clients.id, patient.id));
+  }
+  return true;
+}
+
+export async function changePhone(actor: Actor, clientId: string, raw: string | null) {
+  if (!can(actor, "patients")) throw new PatientError("forbidden");
+  await db.transaction(async tx => {
+    if (!await changePhoneInTransaction(tx, actor, clientId, raw)) return;
+    await tx.insert(schema.accessLog).values({ businessId: actor.business.id, clientId, userId: actor.profile.id, practitionerId: actor.practitionerId, action: "edit_chart" });
   });
 }
 

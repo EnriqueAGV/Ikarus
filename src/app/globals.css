@@ -233,6 +233,7 @@ body {
   .badge { display: inline-flex; align-items: center; border-radius: 9999px; background: rgb(0 0 0 / 0.035); padding: 0.25rem 0.625rem; font-size: 0.75rem; line-height: 1rem; font-weight: 400; }
   .review-dialog { width: min(42rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); margin: auto; border: 1px solid var(--hairline); border-radius: 1.5rem; background: white; color: var(--foreground); padding: 1.75rem; overflow-y: auto; box-shadow: 0 24px 80px #0003; }
   .review-dialog::backdrop { background: #17243d80; }
+  .patient-editor { width: min(50rem, calc(100vw - 2rem)); }
   .conversation-timeline { height: min(34rem, 48dvh); min-height: 15rem; overflow-y: auto; padding: 1.25rem; overscroll-behavior: contain; }
   .message-bubble { max-width: min(90%, 38rem); padding: 0.875rem 1.125rem; border-radius: 1.125rem; font-size: 0.875rem; line-height: 1.55; overflow-wrap: anywhere; }
   .dashboard-view { display: flex; flex-direction: column; gap: 1.75rem; }

@@ -187,18 +187,20 @@ describe("booking agent", () => {
       },
       // Tries to book before the birth date is known: refused.
       { tools: [{ name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00" } }] },
-      { tools: [{ name: "save_client_info", input: { name: null, answers: [{ key: "fecha_nacimiento", value: "1990-05-04" }] } }] },
+      { tools: [{ name: "save_client_info", input: { name: null, answers: [{ key: "fecha_nacimiento", value: "04-05-1990" }] } }] },
       { tools: [{ name: "book_appointment", input: { service_id: serviceId, start: "2026-10-13T10:00" } }] },
-      { text: "¡Listo, Ana! Te esperamos el martes 13 de octubre a las 10:00." },
+      { text: "¡Listo, Ana! Te esperamos el 2026-10-13 a las 10:00." },
     ]);
 
     const result = await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
-    expect(result).toEqual({ status: "replied", reply: "¡Listo, Ana! Te esperamos el martes 13 de octubre a las 10:00." });
+    expect(result).toEqual({ status: "replied", reply: "¡Listo, Ana! Te esperamos el 13-10-2026 a las 10:00 AM." });
+    expect(String(claude.requests[0].messages[0].content)).toContain("12-hour format with explicit AM or PM");
+    expect(String(claude.requests[0].messages[0].content)).toContain("Every calendar date in patient-facing messages MUST use DD-MM-YYYY");
 
     // Slots offered are real local times.
     const slots = lastToolResults(claude.requests[1]);
     expect(slots[1].content).toContain('"local":"2026-10-13T10:00"');
-    expect(slots[1].content).toContain("martes 13 de octubre, 10:00");
+    expect(slots[1].content).toContain("13-10-2026, 10:00 AM");
     // Booking was refused until intake was complete.
     expect(lastToolResults(claude.requests[2])[0]).toEqual({ error: true, content: "Collect these first: fecha_nacimiento" });
     expect(lastToolResults(claude.requests[4])[0].error).toBe(false);

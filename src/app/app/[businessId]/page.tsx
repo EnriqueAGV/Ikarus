@@ -1,3 +1,5 @@
+import { displayTime } from "@/lib/dates";
+import { TimeInput } from "@/components/time-input";
 import { fromZonedTime } from "date-fns-tz";
 import Link from "next/link";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -71,7 +73,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
   const toCall = await needingCall(business.id);
   const blockError = one(sp.error) === "invalid_block" || one(sp.error) === "unknown_practitioner";
   const localDay = (d: Date) => formatLocal(d, tz, "yyyy-MM-dd");
-  const longDate = (d: string) => formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM");
+  const longDate = (d: string) => formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "dd-MM-yyyy");
   const now = new Date();
 
   return (
@@ -85,7 +87,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
             {toCall.map((r) => (
               <li key={r.appointment.id}>
                 <Link href={`${base}/clients/${r.appointment.clientId}`} className="hover:underline">
-                  <span className="capitalize">{formatLocal(r.appointment.startsAt, tz, "EEE d MMM, HH:mm")}</span> ·{" "}
+                  <span className="capitalize">{formatLocal(r.appointment.startsAt, tz, "dd-MM-yyyy, h:mm a")}</span> ·{" "}
                   {r.clientName ?? formatPhone(r.clientPhone)} · {formatPhone(r.clientPhone)}
                   {showDoctor && ` · ${r.practitionerName}`}
                 </Link>
@@ -108,10 +110,10 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                 ? "Próximas citas"
                 : view === "day"
                   ? longDate(date)
-                  : `${formatLocal(new Date(`${from}T12:00:00Z`), "UTC", "d MMM")} – ${formatLocal(
+                  : `${formatLocal(new Date(`${from}T12:00:00Z`), "UTC", "dd-MM-yyyy")} – ${formatLocal(
                       new Date(`${shiftDate(from, 6)}T12:00:00Z`),
                       "UTC",
-                      "d MMM yyyy",
+                      "dd-MM-yyyy",
                     )}`}
             </h1>
             <p className="text-sm text-neutral-500">
@@ -181,7 +183,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
               return (
                 <section key={d} className={`card flex flex-col p-3 ${d === today ? "ring-2 ring-brand/30" : ""} ${h && !h.open ? "bg-neutral-50" : ""}`}>
                   <Link href={href("day", d)} className="mb-2 block hover:underline">
-                    <span className="block text-xs font-semibold capitalize">{formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "EEE d")}</span>
+                    <span className="block text-xs font-semibold capitalize">{formatLocal(new Date(`${d}T12:00:00Z`), "UTC", "dd-MM-yyyy")}</span>
                     <span className="block text-[11px] text-neutral-500">{hoursLabel(h)}</span>
                   </Link>
                   <ul className="flex flex-col gap-1">
@@ -191,7 +193,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                         return (
                           <li key={block.id} className="rounded-lg border border-dashed px-2 py-1.5 text-xs text-neutral-500">
                             <span className="block font-medium tabular-nums">
-                              {formatLocal(block.startsAt, tz, "HH:mm")}–{formatLocal(block.endsAt, tz, "HH:mm")}
+                              {formatLocal(block.startsAt, tz, "h:mm a")}–{formatLocal(block.endsAt, tz, "h:mm a")}
                             </span>
                             Bloqueado{block.note && ` · ${block.note}`}
                             {showDoctor && ` · ${practitionerName}`}
@@ -208,7 +210,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
                             className={`block rounded-lg px-2 py-1.5 text-xs ${appointmentTone(r.appointment)}`}
                           >
                             <span className="block font-semibold tabular-nums">
-                              {formatLocal(r.appointment.startsAt, tz, "HH:mm")}–{formatLocal(r.appointment.endsAt, tz, "HH:mm")}
+                              {formatLocal(r.appointment.startsAt, tz, "h:mm a")}–{formatLocal(r.appointment.endsAt, tz, "h:mm a")}
                             </span>
                             <span className="block line-clamp-2 break-words">{name}</span>
                             <span className="block truncate opacity-70">
@@ -270,7 +272,7 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
               <li key={item.block.id} className="flex items-center justify-between gap-3 bg-neutral-50/70 px-4 py-3 text-sm">
                 <div className="flex items-center gap-4">
                   <div className="w-28 font-medium tabular-nums text-neutral-500">
-                    {formatLocal(item.block.startsAt, tz, "HH:mm")}–{formatLocal(item.block.endsAt, tz, "HH:mm")}
+                    {formatLocal(item.block.startsAt, tz, "h:mm a")}–{formatLocal(item.block.endsAt, tz, "h:mm a")}
                   </div>
                   <div className="text-neutral-500">
                     <span className="font-medium">Horario bloqueado</span>
@@ -320,11 +322,11 @@ export default async function AppointmentsPage({ params, searchParams }: PagePro
               )}
               <label className="flex flex-col gap-1 text-xs text-neutral-500">
                 Hora de inicio
-                <input type="time" name="startTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
+                <TimeInput name="startTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
               </label>
               <label className="flex flex-col gap-1 text-xs text-neutral-500">
                 Hora de fin
-                <input type="time" name="endTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
+                <TimeInput name="endTime" required className="rounded-xl border px-2 py-1.5 text-sm" />
               </label>
               <label className="flex flex-col gap-1 text-xs text-neutral-500">
                 Nota (opcional)
@@ -368,7 +370,7 @@ function countLabel(n: number) {
 function hoursLabel(h: DayHours | undefined) {
   if (!h) return "";
   if (!h.open) return "Cerrado";
-  return `${h.from}–${h.to}`;
+  return `${displayTime(h.from)}–${displayTime(h.to)}`;
 }
 
 const menuItem = "block w-full rounded-xl px-3 py-1.5 text-left hover:bg-black/[0.05]";
@@ -399,7 +401,7 @@ function AppointmentRow({
     <li className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
       <div className="flex items-center gap-4">
         <div className="w-28 text-sm font-medium tabular-nums">
-          {formatLocal(a.startsAt, tz, "HH:mm")}–{formatLocal(a.endsAt, tz, "HH:mm")}
+          {formatLocal(a.startsAt, tz, "h:mm a")}–{formatLocal(a.endsAt, tz, "h:mm a")}
         </div>
         <div>
           <Link href={`${base}/clients/${a.clientId}`} className="font-medium hover:underline">

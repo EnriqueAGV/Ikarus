@@ -1,3 +1,4 @@
+import { displayDate } from "@/lib/dates";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintButton } from "@/components/print-button";
@@ -46,11 +47,11 @@ export default async function PrescriptionPage({ params, searchParams }: PagePro
             <span className="text-neutral-600">Paciente:</span> {client.name ?? formatPhone(client.waPhone)}
           </p>
           <p className="text-right">
-            <span className="text-neutral-600">Fecha:</span> {formatLocal(prescription.createdAt, tz, "d 'de' MMMM yyyy")}
+            <span className="text-neutral-600">Fecha:</span> {formatLocal(prescription.createdAt, tz, "dd-MM-yyyy")}
           </p>
           {client.dateOfBirth && (
             <p>
-              <span className="text-neutral-600">Fecha de nacimiento:</span> {client.dateOfBirth}
+              <span className="text-neutral-600">Fecha de nacimiento:</span> {displayDate(client.dateOfBirth)}
             </p>
           )}
         </section>

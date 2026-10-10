@@ -420,6 +420,25 @@ describe("patient record", () => {
     expect(patients.normalizeDui("01234567-8")).toBe("01234567-8");
     expect(patients.normalizeDui("")).toBeNull();
   });
+  it("saves demographics and a shared household contact together", async () => {
+    const assistant = await actor("assistant", "editor@test.example");
+    const [child] = await db.insert(schema.clients).values({ businessId: business.id, name: "Hija", holderId: clientId, waPhone: "5215511112222" }).returning();
+    await patients.updateDemographics(assistant, clientId, { ...demographics, phone: "7012 3456" }, NOW);
+    const [saved] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    const [dependent] = await db.select().from(schema.clients).where(eq(schema.clients.id, child.id));
+    expect(saved).toMatchObject({ name: "Ana López", waPhone: "50370123456", dui: "01234567-8" });
+    expect(dependent.waPhone).toBe("50370123456");
+    expect((await patients.recentAccess(business.id, clientId)).filter(log => log.action === "edit_chart")).toHaveLength(1);
+  });
+  it("does not partially save demographics when a household contact change is refused", async () => {
+    const assistant = await actor("assistant", "editor@test.example");
+    await db.insert(schema.clients).values({ businessId: business.id, name: "Hija", holderId: clientId, waPhone: "5215511112222" });
+    await db.insert(schema.clients).values({ businessId: business.id, name: "Otra familia", waPhone: "50370123456" });
+    await expect(patients.updateDemographics(assistant, clientId, { ...demographics, phone: "7012 3456" }, NOW)).rejects.toThrow("phone_in_use");
+    const [saved] = await db.select().from(schema.clients).where(eq(schema.clients.id, clientId));
+    expect(saved).toMatchObject({ name: "Ana", waPhone: "5215511112222", dui: null });
+    expect(await patients.recentAccess(business.id, clientId)).toHaveLength(0);
+  });
 });
 
 describe("patients registered by hand", () => {

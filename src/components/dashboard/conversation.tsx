@@ -88,15 +88,15 @@ export function Conversation({ messages, hasOlder, timezone, recipient, phone, e
           } catch { setResult({ ok: false, message: "No se pudo cargar el historial. Inténtalo de nuevo." }); }
         })}>{loadingHistory ? "Cargando…" : "Cargar mensajes anteriores"}</button></div>}
         <ol className="flex flex-col gap-3">{allMessages.map((m, i) => {
-          const day = formatLocal(m.createdAt, timezone, "d MMM yyyy");
-          const previousDay = i ? formatLocal(allMessages[i - 1].createdAt, timezone, "d MMM yyyy") : null;
+          const day = formatLocal(m.createdAt, timezone, "dd-MM-yyyy");
+          const previousDay = i ? formatLocal(allMessages[i - 1].createdAt, timezone, "dd-MM-yyyy") : null;
           const outbound = m.direction === "outbound";
           const staff = typeof m.payload === "object" && m.payload !== null && "sentBy" in m.payload;
           return <li key={m.id} className="flex flex-col">{day !== previousDay && <p className="my-3 text-center text-xs text-muted">{day}</p>}
             <div className={`message-bubble ${outbound ? "self-end bg-[#eaf4ee]" : "self-start bg-neutral-100"}`}>
               <p className="mb-1 text-xs font-semibold text-muted">{outbound ? staff ? "Equipo" : "Asistente" : recipient}</p>
               <p className="whitespace-pre-wrap break-words"><MessageBody text={m.body ?? bodyText(m.type)} /></p>
-              <p className="mt-2 text-xs text-muted">{formatLocal(m.createdAt, timezone, "HH:mm")}</p>
+              <p className="mt-2 text-xs text-muted">{formatLocal(m.createdAt, timezone, "h:mm a")}</p>
             </div>
           </li>;
         })}{!allMessages.length && <li className="py-12 text-center text-sm text-muted">Aún no hay mensajes en este WhatsApp.</li>}</ol>
@@ -116,7 +116,7 @@ export function Conversation({ messages, hasOlder, timezone, recipient, phone, e
         } catch { setResult({ ok: false, code: "send_uncertain", message: "No pudimos confirmar el envío. Conservamos tu respuesta; revisa WhatsApp antes de volver a enviar." }); }
       });
     }}>
-      <div className="flex flex-wrap justify-between gap-2 text-xs text-muted"><span>Enviar a {recipient} · {phone}</span><span>{readOnly ? "Expediente de solo lectura" : reason === "no_whatsapp" ? "Sin WhatsApp registrado" : reason === "not_connected" ? "WhatsApp de la clínica desconectado" : reason ? "La ventana para responder terminó" : eligibility.expiresAt ? `Disponible hasta ${formatLocal(new Date(eligibility.expiresAt), timezone, "d MMM, HH:mm")}` : ""}</span></div>
+      <div className="flex flex-wrap justify-between gap-2 text-xs text-muted"><span>Enviar a {recipient} · {phone}</span><span>{readOnly ? "Expediente de solo lectura" : reason === "no_whatsapp" ? "Sin WhatsApp registrado" : reason === "not_connected" ? "WhatsApp de la clínica desconectado" : reason ? "La ventana para responder terminó" : eligibility.expiresAt ? `Disponible hasta ${formatLocal(new Date(eligibility.expiresAt), timezone, "dd-MM-yyyy, h:mm a")}` : ""}</span></div>
       <label className="block text-sm font-medium" htmlFor="reply-text">Respuesta del equipo</label>
       <textarea id="reply-text" name="text" rows={3} required maxLength={4000} disabled={pending || readOnly} value={text} onChange={e => setText(e.target.value)} placeholder="Escribe la respuesta de la clínica" className="w-full" aria-describedby="reply-help" />
       <div className="flex flex-wrap items-center justify-between gap-3"><p id="reply-help" className="max-w-lg text-xs text-muted">{reason ? "No se puede enviar texto por WhatsApp en este momento. Puedes llamar al contacto; tu respuesta permanece aquí." : "Al enviar, el asistente se pausa para todos los pacientes que comparten este WhatsApp."}</p><button className="btn-primary" disabled={pending || !!reason || readOnly || uncertain || !text.trim()}>{pending ? "Enviando…" : "Enviar por WhatsApp"}</button></div>

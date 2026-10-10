@@ -10,7 +10,7 @@ import { settingsErrorLabel } from "@/lib/dashboard/labels";
 import type { FormResult } from "@/lib/dashboard/form-result";
 
 const value = (form: FormData, key: string) => String(form.get(key) ?? "").trim() || null;
-const fields: Record<string, string> = { invalid_dui: "dui", invalid_birth_date: "dateOfBirth", invalid_phone: "phone", name_required_patient: "name", unknown_practitioner: "preferredPractitionerId" };
+const fields: Record<string, string> = { invalid_dui: "dui", invalid_birth_date: "dateOfBirth", invalid_phone: "phone", phone_in_use: "phone", has_dependents: "phone", name_required_patient: "name", unknown_practitioner: "preferredPractitionerId" };
 async function change(businessId: string, work: () => Promise<unknown>, message: string): Promise<FormResult> {
   try { await work(); } catch (error) { if (error instanceof PatientError) return { ok: false, message: settingsErrorLabel[error.code], field: fields[error.code] }; throw error; }
   revalidatePath(`/app/${businessId}`, "layout");
@@ -20,6 +20,7 @@ export async function editPatientAction(businessId: string, clientId: string, fo
   const actor = await requireBusinessAccess(businessId);
   const sex = value(form, "sex");
   return change(businessId, () => updateDemographics(actor, clientId, {
+    ...(form.has("phone") ? { phone: value(form, "phone") } : {}),
     name: value(form, "name"), dateOfBirth: value(form, "dateOfBirth"), sex: sex === "female" || sex === "male" ? sex : null,
     dui: value(form, "dui"), address: value(form, "address"), guardianName: value(form, "guardianName"), guardianPhone: value(form, "guardianPhone"),
     emergencyContactName: value(form, "emergencyContactName"), emergencyContactPhone: value(form, "emergencyContactPhone"), preferredPractitionerId: value(form, "preferredPractitionerId"),

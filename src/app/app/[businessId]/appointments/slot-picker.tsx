@@ -1,3 +1,4 @@
+import { DateInput } from "@/components/date-input";
 import Link from "next/link";
 import type { Slot } from "@/lib/booking/service";
 import { shiftDate } from "@/lib/dashboard/appointments";
@@ -77,7 +78,7 @@ export function SlotPicker({
         )}
         <label className={label}>
           Fecha
-          <input type="date" name="date" defaultValue={date} min={today} className={input} />
+          <DateInput name="date" defaultValue={date} min={today} className={input} />
         </label>
         <button className="rounded-full border px-4 py-1.5 text-sm bg-white hover:bg-neutral-50">Ver horarios</button>
       </form>
@@ -94,7 +95,7 @@ export function SlotPicker({
           →
         </Link>
         <span className="ml-2 font-medium capitalize">
-          {formatLocal(new Date(`${date}T12:00:00Z`), "UTC", "EEEE d 'de' MMMM")}
+          {formatLocal(new Date(`${date}T12:00:00Z`), "UTC", "dd-MM-yyyy")}
         </span>
       </div>
 
@@ -117,7 +118,7 @@ export function SlotPicker({
                 formAction={bookAction(slot)}
                 className="rounded-full border px-4 py-1.5 text-sm hover:border-brand hover:bg-neutral-100 dark:hover:bg-neutral-900 bg-white"
               >
-                {formatLocal(slot.startsAt, timezone, "HH:mm")}
+                {formatLocal(slot.startsAt, timezone, "h:mm a")}
                 {showDoctor && !doctorId && <span className="block text-xs text-neutral-500">{slot.practitionerName}</span>}
               </button>
             ))}

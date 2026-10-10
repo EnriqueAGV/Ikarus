@@ -1,4 +1,5 @@
 import { openAttention } from "@/lib/messaging/attention";
+import { normalizeChatDates, normalizeChatTimes } from "@/lib/dates";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { env } from "@/lib/env";
@@ -119,7 +120,7 @@ export async function runAgent(input: {
     }
   }
 
-  const text = reply?.trim() || FALLBACK_REPLY;
+  const text = normalizeChatTimes(normalizeChatDates(reply?.trim() || FALLBACK_REPLY));
   const kapsoMessageId = await sendText(business.phoneNumberId, client.waPhone, text);
   await db.insert(schema.messages).values({
     businessId: business.id,
