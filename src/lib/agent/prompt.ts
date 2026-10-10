@@ -12,7 +12,7 @@ function doctorsSection(practitioners: Practitioner[]) {
   return `
 Doctors at this clinic:
 ${list}
-When booking, ask whether the patient wants a particular doctor. If they do, pass that doctor's practitioner_id to find_available_slots; if they don't mind, pass null and offer the earliest times, saying which doctor each one is with. Book with the practitioner_id of the slot the patient chose. list_practitioners says which services each doctor offers.
+When booking, don't ask which doctor first: unless the patient names one, pass null to find_available_slots and offer the suggested times, saying which doctor each one is with. If they want a particular doctor, pass that doctor's practitioner_id. Book with the practitioner_id of the slot the patient chose. list_practitioners says which services each doctor offers.
 `;
 }
 
@@ -38,7 +38,7 @@ What to do:
 1. If the patient is new or information is missing, collect it conversationally, one or two questions at a time, and save each answer with save_client_info as soon as you have it. Always collect the patient's full name. The practice also asks for:
 ${intake}
    Do not ask about symptoms or the reason for the visit unless the practice asks for it above, and never ask for an ID number (DUI), insurance or medical history; the practice collects those in person.
-2. To book: find out which service they need (list_services; if there is only one, use it without asking), when they would like to come, then call find_available_slots and offer a few concrete options (at most 5, written like "viernes 10 de octubre a las 10:30"). Never offer or confirm a time that find_available_slots did not return.
+2. To book: find out which service they need (list_services; if there is only one, use it without asking). Don't ask when they would like to come: call find_available_slots right away (no dates, unless they already named a day or time) and offer the times in "suggested" (written like "viernes 10 de octubre a las 10:30"), then ask which one suits them. If none suits them, or they named a day, a time of day or a week, search that and offer up to 4 times from it. Never offer or confirm a time that find_available_slots did not return.
 3. Before calling book_appointment, confirm the service, day and time with the patient and get a clear yes. After booking, confirm the details in one short message.
 4. Patients can cancel or reschedule their own upcoming appointments (list_my_appointments, cancel_appointment, reschedule_appointment). Confirm with the patient before cancelling.
    Reminders the patient received appear in the conversation with buttons. Tapping "Confirmar" already confirmed the appointment, so just thank them. "Cancelar" right after a reminder is a clear request: cancel that appointment without asking again. "Reprogramar" means they want a new time for it.

@@ -1,5 +1,7 @@
 import type { ChatTool } from "./llm";
 import { eq } from "drizzle-orm";
+import { addDays } from "date-fns";
+import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
 import { db, schema } from "@/db";
 import {
@@ -64,11 +66,11 @@ export const TOOLS: Tool[] = [
   {
     name: "find_available_slots",
     description:
-      "Find free start times for a service between two local dates (inclusive, at most 14 days apart). Each slot says which doctor it is with.",
+      "Find free start times for a service between two local dates (inclusive, at most 14 days apart). With no dates, searches the next 7 days. Each slot says which doctor it is with; `suggested` picks the earliest times spread over a few days, to offer first.",
     input_schema: obj({
       service_id: { type: "string" },
-      date_from: { type: "string", description: "YYYY-MM-DD" },
-      date_to: { type: "string", description: "YYYY-MM-DD" },
+      date_from: { type: ["string", "null"], description: "YYYY-MM-DD, or null for today" },
+      date_to: { type: ["string", "null"], description: "YYYY-MM-DD, or null for 7 days after date_from" },
       practitioner_id: practitionerId("One doctor's id from list_practitioners, or null for any doctor who offers the service"),
     }),
   },
@@ -133,8 +135,8 @@ const inputs = {
   list_practitioners: z.object({}),
   find_available_slots: z.object({
     service_id: z.string(),
-    date_from: z.string(),
-    date_to: z.string(),
+    date_from: z.string().nullish(),
+    date_to: z.string().nullish(),
     practitioner_id: z.string().nullish(),
   }),
   book_appointment: z.object({
@@ -154,6 +156,21 @@ const inputs = {
 };
 
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+// The first two times on each of the first three days that have any, so the
+// patient gets real choices instead of four back-to-back slots.
+export function spread<T>(slots: T[], dayOf: (slot: T) => string, perDay = 2, maxDays = 3) {
+  const picked: T[] = [];
+  const days = new Map<string, number>();
+  for (const slot of slots) {
+    const day = dayOf(slot);
+    const count = days.get(day) ?? 0;
+    if (count === 0 && days.size === maxDays) break;
+    if (count < perDay) picked.push(slot);
+    days.set(day, count + 1);
+  }
+  return picked;
+}
+
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 
 const bookingErrors = {
@@ -259,25 +276,28 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       if (!isUuid(input.service_id)) return { result: bookingErrors.unknown_service, isError: true };
       if (input.practitioner_id && !isUuid(input.practitioner_id))
         return { result: bookingErrors.unknown_practitioner, isError: true };
-      if (!isDate(input.date_from) || !isDate(input.date_to))
-        return { result: "Dates must be YYYY-MM-DD.", isError: true };
-      const days = (Date.parse(input.date_to) - Date.parse(input.date_from)) / 86_400_000;
+      const dateFrom = input.date_from || formatInTimeZone(now, tz, "yyyy-MM-dd");
+      const dateTo = input.date_to || (isDate(dateFrom) ? addDays(new Date(`${dateFrom}T12:00:00Z`), 7).toISOString().slice(0, 10) : "");
+      if (!isDate(dateFrom) || !isDate(dateTo)) return { result: "Dates must be YYYY-MM-DD.", isError: true };
+      const days = (Date.parse(dateTo) - Date.parse(dateFrom)) / 86_400_000;
       if (days < 0 || days > 14) return { result: "Use a range of 0 to 14 days.", isError: true };
       const slots = await availableSlots(business, {
         serviceId: input.service_id,
-        fromDate: input.date_from,
-        toDate: input.date_to,
+        fromDate: dateFrom,
+        toDate: dateTo,
         practitionerId: input.practitioner_id,
         now,
       });
       if (!slots) return { result: bookingErrors.unknown_service, isError: true };
+      const describe = (s: (typeof slots)[number]) => ({
+        ...describeSlot(s.startsAt, tz),
+        practitioner_id: s.practitionerId,
+        practitioner: s.practitionerName,
+      });
       return {
         result: {
-          slots: slots.slice(0, 40).map((s) => ({
-            ...describeSlot(s.startsAt, tz),
-            practitioner_id: s.practitionerId,
-            practitioner: s.practitionerName,
-          })),
+          suggested: spread(slots, (s) => formatInTimeZone(s.startsAt, tz, "yyyy-MM-dd")).map(describe),
+          slots: slots.slice(0, 40).map(describe),
           total: slots.length,
         },
       };
