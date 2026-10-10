@@ -70,3 +70,27 @@ export function keyVersion(stored: string): number | null {
 export function currentKeyVersion() {
   return keyring().current;
 }
+
+// Files (lab results, images): version (2 bytes), iv (12), tag (16), then
+// the ciphertext, bound to `context` like the columns above.
+export function encryptBytes(plain: Uint8Array, context: string): Buffer {
+  const { current, keys } = keyring();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", keys.get(current)!, iv);
+  cipher.setAAD(Buffer.from(context));
+  const ct = Buffer.concat([cipher.update(plain), cipher.final()]);
+  const version = Buffer.alloc(2);
+  version.writeUInt16BE(current);
+  return Buffer.concat([version, iv, cipher.getAuthTag(), ct]);
+}
+
+export function decryptBytes(stored: Uint8Array, context: string): Buffer {
+  const buf = Buffer.from(stored);
+  const version = buf.readUInt16BE(0);
+  const key = keyring().keys.get(version);
+  if (!key) throw new Error(`No key version ${version} for ${context}`);
+  const decipher = createDecipheriv("aes-256-gcm", key, buf.subarray(2, 14));
+  decipher.setAAD(Buffer.from(context));
+  decipher.setAuthTag(buf.subarray(14, 30));
+  return Buffer.concat([decipher.update(buf.subarray(30)), decipher.final()]);
+}

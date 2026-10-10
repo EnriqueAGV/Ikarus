@@ -133,11 +133,13 @@ export async function appointmentsForNotes(actor: Actor, clientId: string, now =
     .limit(20);
 }
 
-export async function listNotes(actor: Actor, clientId: string) {
+// One patient's notes, or several records' (a patient and the duplicates merged into them).
+export async function listNotes(actor: Actor, clientIds: string | string[]) {
   requireClinical(actor);
   return db
     .select({
       id: schema.clinicalNotes.id,
+      clientId: schema.clinicalNotes.clientId,
       number: schema.clinicalNotes.number,
       status: schema.clinicalNotes.status,
       createdAt: schema.clinicalNotes.createdAt,
@@ -154,7 +156,7 @@ export async function listNotes(actor: Actor, clientId: string) {
     .innerJoin(schema.practitioners, eq(schema.practitioners.id, schema.clinicalNotes.practitionerId))
     .leftJoin(schema.appointments, eq(schema.appointments.id, schema.clinicalNotes.appointmentId))
     .leftJoin(schema.services, eq(schema.services.id, schema.appointments.serviceId))
-    .where(and(eq(schema.clinicalNotes.businessId, actor.business.id), eq(schema.clinicalNotes.clientId, clientId)))
+    .where(and(eq(schema.clinicalNotes.businessId, actor.business.id), inArray(schema.clinicalNotes.clientId, [clientIds].flat())))
     .orderBy(desc(sql`coalesce(${schema.appointments.startsAt}, ${schema.clinicalNotes.createdAt})`), desc(schema.clinicalNotes.createdAt));
 }
 

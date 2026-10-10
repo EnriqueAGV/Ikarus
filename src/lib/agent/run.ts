@@ -4,14 +4,14 @@ import { env } from "@/lib/env";
 import { listPractitioners } from "@/lib/booking/practitioners";
 import { upcomingAppointments } from "@/lib/booking/service";
 import { household as loadHousehold } from "@/lib/household";
-import { sendText, sendTyping } from "@/lib/kapso/client";
+import { sendLocation, sendText, sendTyping } from "@/lib/kapso/client";
 import { loadIntakeFields, missingIntake, reloadClient, type Business, type Client } from "./context";
 import { serviceRunning } from "@/lib/billing";
 import { ensureConsent } from "./consent";
 import { EMERGENCY_REPLY, isEmergency } from "./emergency";
 import { staticSystemPrompt, turnContext } from "./prompt";
 import { chatClient, type ChatClient, type ChatMessage } from "./llm";
-import { CHAT_TOOLS, runTool, type ToolContext } from "./tools";
+import { CHAT_TOOLS, hasLocation, runTool, type ToolContext } from "./tools";
 
 const HISTORY_LIMIT = 30;
 const MAX_STEPS = 10;
@@ -128,7 +128,28 @@ export async function runAgent(input: {
     type: "text",
     body: text,
   });
+  if (ctx.sendLocation) await sendClinicLocation(business, client).catch((err) => console.error("location pin failed", err));
   return { status: "replied", reply: text };
+}
+
+const LOCATION_NOTE = "📍 Ubicación del consultorio";
+
+async function sendClinicLocation(business: Business, client: Client) {
+  if (!hasLocation(business) || !business.phoneNumberId || !client.waPhone) return;
+  const kapsoMessageId = await sendLocation(business.phoneNumberId, client.waPhone, {
+    latitude: business.locationLat!,
+    longitude: business.locationLng!,
+    name: business.name,
+    address: business.locationAddress,
+  });
+  await db.insert(schema.messages).values({
+    businessId: business.id,
+    clientId: client.id,
+    direction: "outbound",
+    kapsoMessageId,
+    type: "location",
+    body: LOCATION_NOTE,
+  });
 }
 
 // When the agent can't answer at all: the holding reply, if the patient's

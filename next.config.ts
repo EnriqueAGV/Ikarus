@@ -14,6 +14,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // Lab results and images go up through a server action (see
+  // src/lib/dashboard/attachments.ts: 4 MB per file).
+  experimental: {
+    serverActions: { bodySizeLimit: "4.5mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

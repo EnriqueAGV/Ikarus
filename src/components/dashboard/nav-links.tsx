@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export function NavLinks({ links }: { links: { href: string; label: string; exact?: boolean }[] }) {
+export function NavLinks({ links }: { links: { href: string; label: string; exact?: boolean; badge?: number }[] }) {
   const pathname = usePathname();
   return (
     <nav className="flex gap-1 overflow-x-auto text-sm">
@@ -18,6 +18,13 @@ export function NavLinks({ links }: { links: { href: string; label: string; exac
             }`}
           >
             {l.label}
+            {!!l.badge && (
+              <span
+                className={`ml-1.5 rounded-full px-1.5 text-xs tabular-nums ${active ? "bg-white/25" : "bg-amber-100 text-amber-900"}`}
+              >
+                {l.badge}
+              </span>
+            )}
           </Link>
         );
       })}

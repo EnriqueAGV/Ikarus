@@ -163,6 +163,24 @@ export function sendText(phoneNumberId: string, to: string, body: string) {
   ).then((r) => r.messages?.[0]?.id ?? null);
 }
 
+// A map pin; WhatsApp shows the name and address under it.
+export function sendLocation(
+  phoneNumberId: string,
+  to: string,
+  location: { latitude: number; longitude: number; name: string; address?: string | null },
+) {
+  return kapso<{ messages?: { id: string }[] }>(
+    "POST",
+    `/meta/whatsapp/${GRAPH_VERSION}/${phoneNumberId}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "location",
+      location: { ...location, address: location.address ?? undefined },
+    },
+  ).then((r) => r.messages?.[0]?.id ?? null);
+}
+
 // Marks the patient's message as read and shows "escribiendo…" until the
 // next message is sent, or for at most 25 seconds.
 export function sendTyping(phoneNumberId: string, messageId: string) {

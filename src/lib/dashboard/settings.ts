@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { createPractitioner, getPractitioner, offerServiceByAll } from "@/lib/booking/practitioners";
+import { resolveMapsLink } from "@/lib/location";
 
 // Business-facing configuration: doctors and their hours and days off,
 // services, intake questions and reminder timing. Every function takes the
@@ -313,6 +314,8 @@ export async function updateBusinessSettings(
     reminderEndPolicy?: ReminderEndPolicy;
     faq?: string;
     noShowFollowUp?: boolean;
+    mapsUrl?: string;
+    locationAddress?: string;
   },
 ) {
   if (!Number.isInteger(input.reminderLeadHours) || input.reminderLeadHours < 1 || input.reminderLeadHours > 168) {
@@ -320,6 +323,9 @@ export async function updateBusinessSettings(
   }
   if (input.agentInstructions.length > 4000) throw new SettingsError("instructions_too_long");
   if ((input.faq ?? "").length > 4000) throw new SettingsError("faq_too_long");
+  const mapsUrl = input.mapsUrl?.trim() || null;
+  const coordinates = mapsUrl ? await resolveMapsLink(mapsUrl) : null;
+  if (mapsUrl && !coordinates) throw new SettingsError("invalid_maps_link");
   await db
     .update(schema.businesses)
     .set({
@@ -328,6 +334,10 @@ export async function updateBusinessSettings(
       ...(input.reminderEndPolicy ? { reminderEndPolicy: input.reminderEndPolicy } : {}),
       ...(input.faq !== undefined ? { faq: input.faq.trim() || null } : {}),
       ...(input.noShowFollowUp !== undefined ? { noShowFollowUp: input.noShowFollowUp } : {}),
+      ...(input.mapsUrl !== undefined
+        ? { mapsUrl, locationLat: coordinates?.lat ?? null, locationLng: coordinates?.lng ?? null }
+        : {}),
+      ...(input.locationAddress !== undefined ? { locationAddress: input.locationAddress.trim().slice(0, 200) || null } : {}),
     })
     .where(eq(schema.businesses.id, businessId));
 }

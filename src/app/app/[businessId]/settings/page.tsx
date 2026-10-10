@@ -6,6 +6,7 @@ import { listPractitioners } from "@/lib/booking/practitioners";
 import { todayIn } from "@/lib/dashboard/appointments";
 import { formatLocal, settingsErrorLabel, weekdayLabel } from "@/lib/dashboard/labels";
 import { getExceptions, getWeeklyRules, listIntakeFields, listServices } from "@/lib/dashboard/settings";
+import { mapsLink } from "@/lib/location";
 import {
   addExceptionAction,
   addPractitionerAction,
@@ -273,6 +274,37 @@ export default async function SettingsPage({ params, searchParams }: PageProps<"
             <input type="checkbox" name="noShowFollowUp" defaultChecked={business.noShowFollowUp} />
             Cuando un paciente no asiste, enviarle un WhatsApp ofreciéndole una nueva cita
           </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Ubicación en Google Maps (opcional)">
+              <input
+                name="mapsUrl"
+                defaultValue={business.mapsUrl ?? ""}
+                placeholder="https://maps.app.goo.gl/…"
+                className={`${input} w-full`}
+              />
+              <span>
+                En Google Maps, busca el consultorio, toca Compartir y pega aquí el enlace. El asistente envía la ubicación al
+                agendar una cita y cuando le preguntan cómo llegar.
+                {business.locationLat !== null && business.locationLng !== null && (
+                  <>
+                    {" "}
+                    <a href={mapsLink({ lat: business.locationLat, lng: business.locationLng })} target="_blank" rel="noreferrer" className="text-brand hover:underline">
+                      Ver la ubicación guardada
+                    </a>
+                  </>
+                )}
+              </span>
+            </Field>
+            <Field label="Dirección que se muestra con la ubicación">
+              <input
+                name="locationAddress"
+                maxLength={200}
+                defaultValue={business.locationAddress ?? ""}
+                placeholder="Paseo General Escalón 123, San Salvador"
+                className={`${input} w-full`}
+              />
+            </Field>
+          </div>
           <Field label="Información del consultorio para el asistente (opcional)">
             <textarea
               name="faq"

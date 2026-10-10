@@ -55,6 +55,7 @@ export const settingsErrorLabel: Record<string, string> = {
   label_required: "La pregunta necesita un texto.",
   choice_needs_options: "Una pregunta de opciones necesita al menos dos opciones.",
   invalid_reminder_hours: "El recordatorio debe enviarse entre 1 y 168 horas antes.",
+  invalid_maps_link: "No encontramos la ubicación en ese enlace. Abre el lugar en Google Maps, toca Compartir y pega el enlace.",
   faq_too_long: "La información del consultorio es demasiado larga (máximo 4000 caracteres).",
   instructions_too_long: "Las instrucciones son demasiado largas (máximo 4000 caracteres).",
   invalid_email: "Correo no válido.",
@@ -78,6 +79,16 @@ export const settingsErrorLabel: Record<string, string> = {
   no_whatsapp: "Este paciente no tiene WhatsApp registrado.",
   invalid_phone: "El número no es válido. Escribe 8 dígitos o el número con código de país.",
   name_required_patient: "Escribe el nombre del paciente.",
+  phone_in_use: "Ese número ya es de otro paciente. Si es la misma persona, únelos en Posibles duplicados.",
+  has_dependents:
+    "Otros pacientes comparten este WhatsApp. Cambia primero el número de ellos, o déjalos en el nuevo número de este paciente.",
+  same_patient: "No puedes unir un paciente consigo mismo.",
+  merged: "Este expediente se unió a otro y ya no se puede cambiar.",
+  empty_prescription: "Escribe al menos un medicamento.",
+  too_long: "La receta es demasiado larga.",
+  empty_file: "Elige un archivo.",
+  file_too_large: "El archivo pesa más de 4 MB. Si es una foto, envíala en menor resolución o como PDF.",
+  file_type: "Solo se aceptan PDF e imágenes (JPG, PNG, WEBP o HEIC).",
   slot_unavailable: "Ese horario ya no está libre. Elige otro.",
   unknown_service: "Ese servicio no existe o no está activo.",
   invalid_block: "Revisa el horario a bloquear: la hora final debe ser después de la inicial.",
@@ -109,7 +120,19 @@ export const accessActionLabel = {
   print_note: "Imprimió una nota",
   archive_patient: "Archivó al paciente",
   restore_patient: "Restauró al paciente",
+  merge_patient: "Unió un expediente duplicado",
+  create_prescription: "Emitió una receta",
+  print_prescription: "Imprimió una receta",
+  upload_attachment: "Subió un archivo",
+  view_attachment: "Abrió un archivo",
+  delete_attachment: "Quitó un archivo",
 } as const;
+
+export const attachmentKindLabel = { lab: "Laboratorio", image: "Imagen", other: "Documento" } as const;
+
+export function formatBytes(bytes: number) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export const vitalsLabel = {
   bloodPressure: ["PA", "mmHg"],

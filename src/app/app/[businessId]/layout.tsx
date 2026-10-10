@@ -4,6 +4,7 @@ import { NavLinks } from "@/components/dashboard/nav-links";
 import { can, requireBusinessAccess } from "@/lib/auth";
 import { standing } from "@/lib/billing";
 import { standingNotice } from "@/lib/billing-labels";
+import { waitingCount } from "@/lib/dashboard/inbox";
 
 export default async function BusinessLayout({ children, params }: LayoutProps<"/app/[businessId]">) {
   const { businessId } = await params;
@@ -11,11 +12,14 @@ export default async function BusinessLayout({ children, params }: LayoutProps<"
   const { business } = membership;
   const base = `/app/${business.id}`;
   const notice = standingNotice(standing(business), business.timezone);
+  const waiting = await waitingCount(business.id);
   const links = [
     { href: base, label: "Citas", exact: true },
+    { href: `${base}/inbox`, label: "Por responder", badge: waiting },
     { href: `${base}/clients`, label: "Pacientes" },
     ...(can(membership, "clinic.manage")
       ? [
+          { href: `${base}/stats`, label: "Números" },
           { href: `${base}/settings`, label: "Ajustes" },
           { href: `${base}/team`, label: "Equipo" },
         ]

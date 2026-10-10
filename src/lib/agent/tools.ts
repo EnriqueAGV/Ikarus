@@ -108,6 +108,12 @@ export const TOOLS: Tool[] = [
     }),
   },
   {
+    name: "send_location",
+    description:
+      "Send the clinic's location as a WhatsApp map pin, right after your reply. Use when the patient asks where the clinic is or how to get there. After a booking it is sent automatically.",
+    input_schema: obj({}),
+  },
+  {
     name: "handoff_to_business",
     description:
       "Pass the conversation to the business's staff and stop answering automatically. Use when the client needs a human.",
@@ -123,7 +129,15 @@ export const CHAT_TOOLS: ChatTool[] = TOOLS.map((t) => ({
 
 // client is the number's holder, who is writing; household is everyone on
 // the number, holder first.
-export type ToolContext = { business: Business; client: Client; household: Client[]; fields: IntakeField[]; now: Date };
+// sendLocation is set by a tool when the clinic's pin should follow the reply.
+export type ToolContext = {
+  business: Business;
+  client: Client;
+  household: Client[];
+  fields: IntakeField[];
+  now: Date;
+  sendLocation?: boolean;
+};
 export type ToolOutcome = { result: unknown; isError?: boolean; handoff?: boolean };
 
 const inputs = {
@@ -155,8 +169,11 @@ const inputs = {
     new_start: z.string(),
     practitioner_id: z.string().nullish(),
   }),
+  send_location: z.object({}),
   handoff_to_business: z.object({ reason: z.string() }),
 };
+
+export const hasLocation = (b: Business) => b.locationLat !== null && b.locationLng !== null;
 
 const isUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 // The first two times on each of the first three days that have any, so the
@@ -330,9 +347,11 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         serviceId: input.service_id,
         localStart: input.start,
         practitionerId: input.practitioner_id,
+        bookedBy: "assistant",
         now,
       });
       if (!booked.ok) return { result: bookingErrors[booked.reason], isError: true };
+      if (hasLocation(business)) ctx.sendLocation = true;
       return {
         result: {
           booked: true,
@@ -383,6 +402,14 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       return {
         result: { rescheduled: true, appointment_id: moved.appointment.id, ...describeSlot(moved.appointment.startsAt, tz) },
       };
+    }
+
+    case "send_location": {
+      if (!hasLocation(business)) {
+        return { result: "The clinic has not set its location. Give the address from Clinic information if it has one, otherwise hand off.", isError: true };
+      }
+      ctx.sendLocation = true;
+      return { result: { will_send_after_reply: true } };
     }
 
     case "handoff_to_business": {
