@@ -39,7 +39,7 @@ describe("standing", () => {
 
   it("explains itself to the clinic", () => {
     expect(standingLabel({ status: "active", until: "2026-11-10" }, "America/El_Salvador")).toBe("Pagado hasta el 09-11-2026");
-    expect(standingNotice({ status: "trial", until: new Date(NOW.getTime() + 30 * DAY) }, "America/El_Salvador", NOW)).toBeNull();
+    expect(standingNotice({ status: "trial", until: new Date(NOW.getTime() + 5 * DAY) }, "America/El_Salvador", NOW)).toBeNull();
     expect(standingNotice({ status: "trial", until: new Date(NOW.getTime() + 2 * DAY) }, "America/El_Salvador", NOW)?.tone).toBe("warn");
     expect(standingNotice({ status: "expired", since: "2026-10-10" }, "America/El_Salvador", NOW)?.tone).toBe("stop");
   });

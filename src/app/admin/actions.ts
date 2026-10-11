@@ -8,6 +8,7 @@ import { db, schema } from "@/db";
 import { requireSuperAdmin } from "@/lib/auth";
 import {
   BillingError,
+  DEFAULT_TRIAL_DAYS,
   issueNextInvoice,
   markInvoicePaid,
   setMonthlyPrice,
@@ -31,7 +32,7 @@ const newBusiness = z.object({
   ownerName: z.string().trim().min(2),
   specialty: z.string().trim().optional(),
   jvpmNumber: z.string().trim().optional(),
-  trialDays: z.coerce.number().int().min(0).max(365).default(30),
+  trialDays: z.coerce.number().int().min(0).max(365).default(DEFAULT_TRIAL_DAYS),
 });
 
 export async function createBusinessAction(formData: FormData) {

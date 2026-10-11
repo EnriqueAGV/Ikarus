@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireSuperAdmin } from "@/lib/auth";
+import { DEFAULT_TRIAL_DAYS } from "@/lib/billing";
 import { createBusinessAction } from "../actions";
 
 const TIMEZONES = [
@@ -50,7 +51,7 @@ export default async function NewBusinessPage({ searchParams }: PageProps<"/admi
         <Field label="N.º JVPM (opcional)" name="jvpmNumber" />
         <label className="flex flex-col gap-1 text-sm">
           Días de prueba gratis
-          <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-28 rounded-xl border px-3 py-2" />
+          <input name="trialDays" type="number" min={0} max={365} defaultValue={DEFAULT_TRIAL_DAYS} className="w-28 rounded-xl border px-3 py-2" />
           <span className="text-xs text-neutral-500">0 para cobrar desde el inicio.</span>
         </label>
         <p className="text-sm text-neutral-500">

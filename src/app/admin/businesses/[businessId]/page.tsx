@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { db, schema } from "@/db";
 import { CopyButton } from "@/components/copy-button";
 import { requireSuperAdmin } from "@/lib/auth";
-import { bankDetails, formatMoney, invoicesFor, standing, transferReference } from "@/lib/billing";
+import { DEFAULT_TRIAL_DAYS, bankDetails, formatMoney, invoicesFor, standing, transferReference } from "@/lib/billing";
 import { standingLabel } from "@/lib/billing-labels";
 import {
   issueInvoiceAction,
@@ -171,7 +171,7 @@ export default async function AdminBusinessPage({
           <form action={setTrialAction.bind(null, business.id)} className="flex items-end gap-2">
             <label className="flex flex-col gap-1 text-xs text-neutral-500">
               Prueba gratis: días desde hoy
-              <input name="trialDays" type="number" min={0} max={365} defaultValue={30} className="w-24 rounded-xl border px-2 py-1.5 text-sm" />
+              <input name="trialDays" type="number" min={0} max={365} defaultValue={DEFAULT_TRIAL_DAYS} className="w-24 rounded-xl border px-2 py-1.5 text-sm" />
             </label>
             <button className="rounded-full border bg-white px-3 py-1.5 hover:bg-neutral-50">Dar prueba</button>
           </form>

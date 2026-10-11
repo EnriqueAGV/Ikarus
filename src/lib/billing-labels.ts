@@ -28,7 +28,7 @@ export function standingLabel(s: Standing, timezone: string) {
 // A banner for the clinic's dashboard when something needs doing: a trial
 // about to end, a payment due, or the assistant stopped. Null otherwise.
 export function standingNotice(s: Standing, timezone: string, now = new Date()) {
-  if (s.status === "trial" && s.until.getTime() - now.getTime() < 7 * 86_400_000) {
+  if (s.status === "trial" && s.until.getTime() - now.getTime() < 3 * 86_400_000) {
     return { tone: "warn" as const, text: `Su prueba gratis termina el ${fmt(s.until, timezone)}. Vea cómo pagar en Ajustes, Plan y pagos.` };
   }
   if (s.status === "grace") {

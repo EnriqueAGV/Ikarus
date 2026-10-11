@@ -34,7 +34,7 @@ The earlier PR references below follow the supplied backlog and local merged his
 | --- | --- | --- |
 | Front desk | Book and reschedule dashboard appointments; block calendar time for calls and walk-ins. | [PR #21](https://github.com/EnriqueAGV/Ikarus/pull/21). |
 | Appointment messaging | Dashboard bookings enter the WhatsApp confirmation and reminder flows. | PR #21. Actual sending depends on connected numbers, template approval and operational eligibility. |
-| Billing | Bank-transfer invoices, administrator payment recording, configurable free trial, and assistant/reminder suspension after coverage and grace periods expire. | [PR #23](https://github.com/EnriqueAGV/Ikarus/pull/23). Defaults: 30-day trial and 7-day grace. |
+| Billing | Bank-transfer invoices, administrator payment recording, configurable free trial, and assistant/reminder suspension after coverage and grace periods expire. | [PR #23](https://github.com/EnriqueAGV/Ikarus/pull/23). Defaults: 7-day trial and 7-day grace. |
 | Clinic information | Editable clinic FAQ/information used by the assistant. | PR #23. Clinic staff must supply and maintain the content. |
 | No-show follow-up | A follow-up flow when staff mark an appointment “No asistió,” with a clinic setting to disable it. | PR #23. Sending conditions still apply. |
 | Patient intake | Full-name and DUI collection, with separate handling for minors and escalation when an adult has no DUI. | PR #23. |
