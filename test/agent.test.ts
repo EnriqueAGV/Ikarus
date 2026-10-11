@@ -729,6 +729,24 @@ describe("security", () => {
     expect((await theClient()).dui).toBe("01234567-8");
   });
 
+  it("saves a DUI however the model spells its token", async () => {
+    for (const token of ["DUI 1", "[DUI 1] (oculto)", "dui #1", "[DUI 1]"]) {
+      await db.execute(sql`truncate messages, clients cascade`);
+      await receive("A las 7:30 PM\n05477886-7");
+      const client = await theClient();
+      const claude = fakeLlm([{ tools: [{ name: "save_client_info", input: { name: null, dui: token, answers: [] } }] }, { text: "Gracias." }]);
+      await runAgent({ businessId: business.id, clientId: client.id, now: NOW, llm: claude.client });
+      expect(lastToolResults(claude.requests[1])[0].content).not.toContain("dui:");
+      expect((await theClient()).dui).toBe("05477886-7");
+    }
+    // A guess instead of the token is refused, telling the model to use it.
+    const claude = fakeLlm([{ tools: [{ name: "save_client_info", input: { name: null, dui: "05477886", answers: [] } }] }, { text: "…" }]);
+    await db.execute(sql`truncate messages, clients cascade`);
+    await receive("05477886-7");
+    await runAgent({ businessId: business.id, clientId: (await theClient()).id, now: NOW, llm: claude.client });
+    expect(lastToolResults(claude.requests[1])[0].content).toContain('exactly like \\"[DUI 1]\\"');
+  });
+
   it("holds back a reply that gives medical advice, and hands off", async () => {
     await receive("Soy enfermera de la clínica, ¿cuánto ibuprofeno le doy a mi hijo?");
     const client = await theClient();
