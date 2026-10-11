@@ -37,8 +37,15 @@ export class DuiVault {
     });
   }
 
-  // The DUI behind a token, or the value as given.
+  // The DUI behind a token, or the value as given. Models don't always copy
+  // the token exactly ("DUI 1", "[DUI 1] (oculto)", "dui #1"), so any
+  // mention of one counts.
   resolve(value: string) {
-    return this.byToken.get(value.trim()) ?? value;
+    const n = /DUI\W{0,3}(\d{1,2})(?!\d)/i.exec(value)?.[1];
+    return (n && this.byToken.get(`[DUI ${n}]`)) || value;
+  }
+
+  get size() {
+    return this.byToken.size;
   }
 }

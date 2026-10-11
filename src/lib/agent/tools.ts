@@ -46,7 +46,7 @@ export const TOOLS: Tool[] = [
     input_schema: obj({
       patient_id: patientId,
       name: { type: ["string", "null"], description: "Patient's full name, or null if not given now" },
-      dui: { type: ["string", "null"], description: "The patient's DUI (9 digits, e.g. 01234567-8), or null if not given now" },
+      dui: { type: ["string", "null"], description: 'The "[DUI n]" token the patient\'s DUI appears as in the conversation, or null if not given now' },
       answers: {
         type: "array",
         description: "Answers to intake questions, by question key",
@@ -267,13 +267,17 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
         }
         else if (field.type === "choice" && field.options?.length && !field.options.includes(value))
           rejected.push(`${key}: must be one of ${field.options.join(", ")}`);
-        else data[key] = value.trim();
+        else data[key] = ctx.duis.resolve(value).trim();
       }
       let dui: string | null = null;
       try {
         dui = normalizeDui(input.dui ? ctx.duis.resolve(input.dui) : null);
       } catch {
-        rejected.push("dui: a DUI has 9 digits, like 01234567-8; ask the patient to check it");
+        rejected.push(
+          ctx.duis.size
+            ? 'dui: pass the token the DUI appears as in the conversation, exactly like "[DUI 1]"; do not ask the patient again'
+            : "dui: a DUI has 9 digits, like 01234567-8; ask the patient to check it",
+        );
       }
       // Once staff confirmed the name and DUI, a different one is kept for
       // their review instead of overwriting the record.
