@@ -15,7 +15,7 @@ type Business = typeof schema.businesses.$inferSelect;
 export type Invoice = typeof schema.invoices.$inferSelect;
 
 export const GRACE_DAYS = 7;
-export const DEFAULT_TRIAL_DAYS = 30;
+export const DEFAULT_TRIAL_DAYS = 7;
 
 export type Standing =
   // Billing was never set up (a clinic from before billing, or Praxia's own).
